@@ -46,7 +46,6 @@ public class EventController {
     private boolean swallowGesture = false;
     /** Last time we sent KEYCODE_WAKEUP (uptime ms). */
     private volatile long lastWakeAt = 0;
-    private Thread panelKeeper;
 
     public EventController(Device device, DroidConnection connection, ScreenEncoder screenEncoder) {
         this.device = device;
@@ -370,33 +369,8 @@ public class EventController {
         }
     }
 
-    /**
-     * Screen-off mode: one background thread keeps the physical panel dark.
-     * Android (keyguard, wake-ups) may switch the panel back on; it is turned
-     * off again within a second. setDisplayPowerMode is a no-op when the mode
-     * does not change, so re-applying it is cheap.
-     */
-    private synchronized void startPanelKeeper() {
-        if (panelKeeper != null) {
-            return;
-        }
-        panelKeeper = new Thread(() -> {
-            boolean first = true;
-            while (true) {
-                SystemClock.sleep(1000);
-                // Leave time for a wake-up to finish before darkening the panel.
-                if (SystemClock.uptimeMillis() - lastWakeAt < 1500) {
-                    continue;
-                }
-                if (device.isScreenOn()) {
-                    org.server.scrcpy.wrappers.DisplayPower.setPowerMode(
-                            org.server.scrcpy.wrappers.DisplayPower.POWER_MODE_OFF, first);
-                    first = false;
-                }
-            }
-        }, "panel-keeper");
-        panelKeeper.setDaemon(true);
-        panelKeeper.start();
+    private void startPanelKeeper() {
+        ScreenOffController.start(device, () -> lastWakeAt);
     }
 
 }

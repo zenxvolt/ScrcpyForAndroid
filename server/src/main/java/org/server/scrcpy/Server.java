@@ -19,9 +19,7 @@ public final class Server {
         final Device device = new Device(options);
         if (options.isScreenOff()) {
             // Turn the physical panel back on when the server goes away.
-            Runtime.getRuntime().addShutdownHook(new Thread(() ->
-                    org.server.scrcpy.wrappers.DisplayPower.setPowerMode(
-                            org.server.scrcpy.wrappers.DisplayPower.POWER_MODE_NORMAL)));
+            Runtime.getRuntime().addShutdownHook(new Thread(ScreenOffController::restore));
         }
         try (DroidConnection connection = DroidConnection.open(ip)) {
             ScreenEncoder screenEncoder = new ScreenEncoder(options);
@@ -40,8 +38,7 @@ public final class Server {
             }
         } finally {
             if (options.isScreenOff()) {
-                org.server.scrcpy.wrappers.DisplayPower.setPowerMode(
-                        org.server.scrcpy.wrappers.DisplayPower.POWER_MODE_NORMAL);
+                ScreenOffController.restore();
             }
         }
     }
