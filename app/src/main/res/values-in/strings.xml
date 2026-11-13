@@ -87,7 +87,7 @@
     <string name="connect_error_bad_address">%1$s bukan alamat yang valid.</string>
     <string name="connect_error_offline">%1$s terhubung tetapi offline.\n\nMatikan lalu nyalakan lagi Debugging nirkabel di perangkat target (atau cabut-colok USB), lalu coba lagi.</string>
     <string name="connect_error_unknown">Tidak dapat terhubung ke %1$s.</string>
-    <string name="connect_error_server">Terhubung ke %1$s, tetapi server scrcpy gagal dijalankan. Pastikan perangkat target tidak terkunci lalu coba lagi.</string>
+    <string name="connect_error_server">Terhubung ke %1$s, tetapi server scrcpy gagal dijalankan. Pastikan perangkat target tidak terkunci lalu coba lagi. Jika Mode root aktif, pastikan izin root (su) sudah diberikan ke “Shell” di perangkat target.</string>
     <string name="connect_error_stream_timeout">Perangkat tidak mengirim video. Buka kuncinya lalu coba lagi, atau pilih resolusi lebih rendah / H.264.</string>
 
     <string name="discover_title">Perangkat di jaringan ini</string>
@@ -128,6 +128,17 @@
 
     <string name="howto_title">Cara menghubungkan</string>
     <string name="howto_message">1. Kabel USB (paling mudah)\nAktifkan USB debugging di perangkat target, colokkan dengan kabel OTG, lalu ketuk Mulai.\n\n2. USB → Wi-Fi\nColokkan sekali, ketuk “USB → Wi-Fi”, lalu cabut. Target tetap bisa dijangkau di port 5555 sampai di-reboot.\n\n3. Debugging nirkabel (Android 11+, tanpa kabel)\nDi target: Opsi pengembang → Debugging nirkabel → “Sambungkan perangkat dengan kode penyambungan”. Di sini: ketuk “Pairing (Android 11+)” atau “Cari perangkat”.\n\nKedua HP harus berada di Wi-Fi yang sama (atau salah satu memakai hotspot yang lain).</string>
+
+    <string name="label_stream_priority">Prioritas</string>
+    <string name="helper_stream_priority">Lancar menjaga FPS tetap stabil (gambar bisa buram saat adegan ramai). Tajam menjaga gambar tetap jernih (FPS bisa turun). Di Wi-Fi lokal yang cepat, naikkan juga bitrate-nya.</string>
+    <string name="switch_root_mode">Mode root (tampilkan PIN layar kunci &amp; aplikasi aman)</string>
+    <string name="helper_root_mode">Perangkat target harus di-root dan izin root (su) diberikan ke “Shell”. Juga memungkinkan kontrol tanpa “USB debugging (Pengaturan keamanan)” di Xiaomi.</string>
+
+    <string-array name="options_priority_keys">
+        <item>Seimbang</item>
+        <item>Lancar (prioritas FPS)</item>
+        <item>Tajam (prioritas kualitas)</item>
+    </string-array>
 
     <string-array name="options_delay_keys">
         <item>Tinggi (100ms)</item>

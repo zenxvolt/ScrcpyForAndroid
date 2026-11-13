@@ -47,6 +47,8 @@ public class ScreenEncoder implements Device.RotationListener {
     private String lastGoodEncoder = "";
     /** Use only the mandatory MediaFormat keys (some vendor encoders reject the optional ones). */
     private boolean minimalFormat = false;
+    /** One of Options.PRIORITY_*. */
+    private String priority = Options.PRIORITY_BALANCED;
 
     /** Video max sizes tried, in order, when the encoder rejects the native resolution. */
     private static final int[] FALLBACK_MAX_SIZES = {1920, 1600, 1280, 1024, 800};
@@ -71,6 +73,16 @@ public class ScreenEncoder implements Device.RotationListener {
         this(options.getBitRate(), options.getFrameRate(), DEFAULT_I_FRAME_INTERVAL,
                 options.getVideoMimeType(),
                 options.hasCustomEncoder() ? options.getVideoEncoder() : "");
+        this.priority = options.getPriority();
+        Ln.i("Stream priority: " + priority);
+    }
+
+    private boolean isQualityPriority() {
+        return Options.PRIORITY_QUALITY.equals(priority);
+    }
+
+    private boolean isFpsPriority() {
+        return Options.PRIORITY_FPS.equals(priority);
     }
 
     private static boolean isUnreliableEncoder(String encoderName) {
@@ -205,7 +217,8 @@ public class ScreenEncoder implements Device.RotationListener {
         format.setInteger(MediaFormat.KEY_BIT_RATE, bitRate);
         format.setInteger(MediaFormat.KEY_FRAME_RATE, frameRate);
         format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
-        format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, iFrameInterval);
+        // Quality mode: fewer key frames leave more bits for the picture.
+        format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, isQualityPriority() ? Math.max(iFrameInterval, 2) : iFrameInterval);
         format.setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 100_000);
         if (minimalFormat) {
             return format;
@@ -213,6 +226,14 @@ public class ScreenEncoder implements Device.RotationListener {
         format.setInteger("max-bframes", 0);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             format.setInteger(MediaFormat.KEY_COLOR_RANGE, MediaFormat.COLOR_RANGE_LIMITED);
+        }
+        if (isQualityPriority()) {
+            // Best-effort (non real-time) encoding: the encoder may spend more time per
+            // frame for a better picture, so the frame rate can drop.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                format.setInteger(MediaFormat.KEY_PRIORITY, 1);
+            }
+            return format;
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             format.setInteger(MediaFormat.KEY_PRIORITY, 0);
@@ -237,8 +258,52 @@ public class ScreenEncoder implements Device.RotationListener {
         return SurfaceControl.createDisplay("scrcpy", secure);
     }
 
-    private static void configure(MediaCodec codec, MediaFormat format) {
+    private void configure(MediaCodec codec, MediaFormat format) {
+        if (!minimalFormat) {
+            applyPriority(codec, format);
+        }
         codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
+    }
+
+    /**
+     * Codec specific keys for the streaming priority, only when the encoder
+     * supports them:
+     * <ul>
+     *     <li>FPS: constant bitrate, so every frame gets a fixed budget and the
+     *     picture gets blurrier in busy scenes instead of the frame rate dropping</li>
+     *     <li>Quality: variable bitrate and (for H.264) the High profile</li>
+     * </ul>
+     */
+    private void applyPriority(MediaCodec codec, MediaFormat format) {
+        if (!isFpsPriority() && !isQualityPriority()) {
+            return;
+        }
+        try {
+            MediaCodecInfo.CodecCapabilities caps = codec.getCodecInfo().getCapabilitiesForType(mimeType);
+            MediaCodecInfo.EncoderCapabilities encoderCaps = caps.getEncoderCapabilities();
+            int mode = isFpsPriority()
+                    ? MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR
+                    : MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR;
+            if (encoderCaps != null && encoderCaps.isBitrateModeSupported(mode)) {
+                format.setInteger(MediaFormat.KEY_BITRATE_MODE, mode);
+                Ln.i("Bitrate mode: " + (mode == MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR ? "CBR" : "VBR"));
+            }
+            if (isQualityPriority() && "video/avc".equals(mimeType) && caps.profileLevels != null) {
+                int bestLevel = -1;
+                for (MediaCodecInfo.CodecProfileLevel pl : caps.profileLevels) {
+                    if (pl.profile == MediaCodecInfo.CodecProfileLevel.AVCProfileHigh && pl.level > bestLevel) {
+                        bestLevel = pl.level;
+                    }
+                }
+                if (bestLevel > 0) {
+                    format.setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileHigh);
+                    format.setInteger(MediaFormat.KEY_LEVEL, bestLevel);
+                    Ln.i("H.264 High profile, level " + bestLevel);
+                }
+            }
+        } catch (Exception e) {
+            Ln.w("Could not apply stream priority: " + e);
+        }
     }
 
     private static void setSize(MediaFormat format, int width, int height) {

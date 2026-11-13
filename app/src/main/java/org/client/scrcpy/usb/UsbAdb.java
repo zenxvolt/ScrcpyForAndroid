@@ -151,19 +151,32 @@ public class UsbAdb {
     public void startServerAndForward(File localFile, int localForwardPort, String serverIp,
                                       int bitrate, int size, boolean enableAudio)
             throws IOException, InterruptedException {
+        startServerAndForward(localFile, localForwardPort,
+                new String[]{serverIp, String.valueOf(size), String.valueOf(bitrate), "true",
+                        String.valueOf(enableAudio)},
+                false);
+    }
+
+    /**
+     * Push the server jar, set up port forwarding and launch the scrcpy server
+     * with the given server arguments ({@code Options#optionsToArgs()}).
+     *
+     * @param root start the server through su (secure content capture)
+     */
+    public void startServerAndForward(File localFile, int localForwardPort, String[] serverArgs, boolean root)
+            throws IOException, InterruptedException {
         pushFile(localFile, REMOTE_JAR_PATH);
 
         // Start forwarding before launching so the accept loop is ready.
         bridge = new AdbForwardBridge(connection, localForwardPort, REMOTE_SERVER_PORT);
         bridge.start();
 
-        String command = "shell:CLASSPATH=" + REMOTE_JAR_PATH
-                + " app_process / org.server.scrcpy.Server"
-                + " " + serverIp
-                + " " + size
-                + " " + bitrate
-                + " " + true
-                + " " + enableAudio;
+        StringBuilder server = new StringBuilder("CLASSPATH=" + REMOTE_JAR_PATH
+                + " app_process / org.server.scrcpy.Server");
+        for (String arg : serverArgs) {
+            server.append(' ').append(arg);
+        }
+        String command = root ? "shell:su -c '" + server + "'" : "shell:" + server;
         serverStream = connection.open(command, STREAM_TIMEOUT_MS);
         Log.i(TAG, "USB scrcpy server launched: " + command);
     }

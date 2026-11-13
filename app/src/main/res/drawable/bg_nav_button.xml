@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Round ripple for the mirror navigation buttons (no theme attributes: the
+     mirror layout is inflated without the app theme). -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#33FFFFFF"
+    android:radius="24dp" />

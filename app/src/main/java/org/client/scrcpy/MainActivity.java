@@ -110,6 +110,8 @@ public class MainActivity extends AppCompatActivity implements Scrcpy.ServiceCal
     private String videoCodec = Options.CODEC_H264;
     private String videoEncoder = "";
     private int videoFrameRate = 60;
+    private String streamPriority = Options.PRIORITY_BALANCED;
+    private boolean rootMode = false;
     private Context context;
     private String serverAdr = null;
     private SurfaceView surfaceView;
@@ -712,11 +714,17 @@ public class MainActivity extends AppCompatActivity implements Scrcpy.ServiceCal
         aSwitch0.setChecked(PreUtils.get(context, Constant.CONTROL_NO, false));
         aSwitch1.setChecked(PreUtils.get(context, Constant.CONTROL_NAV, false));
         audioForwardSwitch.setChecked(PreUtils.get(context, Constant.AUDIO_FORWARD, true));
+        CompoundButton rootModeSwitch = findViewById(R.id.switch_root_mode);
+        if (rootModeSwitch != null) {
+            rootModeSwitch.setChecked(PreUtils.get(context, Constant.ROOT_MODE, false));
+        }
+        migrateBitratePreference();
 
         setupDropdown(R.array.options_bitrate_keys, R.id.spinner_video_bitrate, Constant.PREFERENCE_SPINNER_BITRATE, null);
         setupDropdown(R.array.options_codec_keys, R.id.spinner_video_codec, Constant.PREFERENCE_SPINNER_CODEC, null);
         setupDropdown(R.array.options_fps_keys, R.id.spinner_video_fps, Constant.PREFERENCE_SPINNER_FPS, null);
         setupDropdown(R.array.options_delay_keys, R.id.delay_control_spinner, Constant.PREFERENCE_SPINNER_DELAY, null);
+        setupDropdown(R.array.options_priority_keys, R.id.spinner_priority, Constant.PREFERENCE_SPINNER_PRIORITY, null);
         setupDropdown(R.array.options_resolution_keys, R.id.spinner_video_resolution,
                 Constant.PREFERENCE_SPINNER_RESOLUTION, this::updateResolutionPreview);
         updateResolutionPreview();
@@ -746,12 +754,13 @@ public class MainActivity extends AppCompatActivity implements Scrcpy.ServiceCal
         }
         float this_dev_height = linearLayout.getHeight();
         float this_dev_width = linearLayout.getWidth();
-        if (PreUtils.get(context, Constant.CONTROL_NAV, false) &&
-                !PreUtils.get(context, Constant.CONTROL_NO, false)) {
+        View navBar = findViewById(R.id.nav_button_bar);
+        if (navBar != null && navBar.getVisibility() == View.VISIBLE) {
+            // Use the real size of the navigation bar (it is in dp, not a fixed pixel count).
             if (landscape) {
-                this_dev_width = this_dev_width - 96;
-            } else {                                                 //100 is the height of nav bar but need multiples of 8.
-                this_dev_height = this_dev_height - 96;
+                this_dev_width = this_dev_width - navBar.getWidth();
+            } else {
+                this_dev_height = this_dev_height - navBar.getHeight();
             }
         }
         int[] remote = scrcpy.getOrientedRemoteSize(landscape);
@@ -770,7 +779,8 @@ public class MainActivity extends AppCompatActivity implements Scrcpy.ServiceCal
         int contentH = Math.round(remoteH * scale);
         int padH = Math.max(0, ((int) this_dev_width - contentW) / 2);
         int padV = Math.max(0, ((int) this_dev_height - contentH) / 2);
-        linearLayout.setPadding(padH, padV, padH, padV);
+        // Letterbox only the video, so the navigation bar keeps its full width/height.
+        setSurfaceMargins(padH, padV);
         Log.i("Scrcpy", "Fit remote " + remoteW + "x" + remoteH
                 + " into " + (int) this_dev_width + "x" + (int) this_dev_height
                 + " content=" + contentW + "x" + contentH
@@ -806,6 +816,18 @@ public class MainActivity extends AppCompatActivity implements Scrcpy.ServiceCal
      * Material exposed dropdown (replacement for Spinner). The selected index
      * is persisted under {@code preferenceId}.
      */
+    private void setSurfaceMargins(int horizontal, int vertical) {
+        if (surfaceView == null || !(surfaceView.getLayoutParams() instanceof ViewGroup.MarginLayoutParams)) {
+            return;
+        }
+        ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) surfaceView.getLayoutParams();
+        if (params.leftMargin != horizontal || params.topMargin != vertical
+                || params.rightMargin != horizontal || params.bottomMargin != vertical) {
+            params.setMargins(horizontal, vertical, horizontal, vertical);
+            surfaceView.setLayoutParams(params);
+        }
+    }
+
     private void setupDropdown(final int textArrayOptionResId, final int viewResId, final String preferenceId,
                                Runnable onChanged) {
         final MaterialAutoCompleteTextView dropdown = findViewById(viewResId);
@@ -819,6 +841,19 @@ public class MainActivity extends AppCompatActivity implements Scrcpy.ServiceCal
                 onChanged.run();
             }
         });
+    }
+
+    /**
+     * Higher bitrates were added at the top of the bitrate list: shift the
+     * index saved by older versions so the user keeps the same bitrate.
+     */
+    private void migrateBitratePreference() {
+        if (PreUtils.get(context, Constant.PREFERENCE_SPINNER_BITRATE, -1) >= 0) {
+            return;
+        }
+        // No legacy value (new install) keeps the old default: 8 Mbps.
+        int oldIndex = Math.max(0, PreUtils.get(context, Constant.PREFERENCE_SPINNER_BITRATE_LEGACY, 0));
+        PreUtils.put(context, Constant.PREFERENCE_SPINNER_BITRATE, oldIndex + Constant.BITRATE_OPTIONS_ADDED);
     }
 
     /** Persisted dropdown index, clamped to the option array. */
@@ -949,11 +984,16 @@ public class MainActivity extends AppCompatActivity implements Scrcpy.ServiceCal
         final int codecIndex = getDropdownIndex(Constant.PREFERENCE_SPINNER_CODEC, R.array.options_codec_keys);
         final int fpsIndex = getDropdownIndex(Constant.PREFERENCE_SPINNER_FPS, R.array.options_fps_keys);
         final int delayIndex = getDropdownIndex(Constant.PREFERENCE_SPINNER_DELAY, R.array.options_delay_keys);
+        final int priorityIndex = getDropdownIndex(Constant.PREFERENCE_SPINNER_PRIORITY, R.array.options_priority_keys);
         final EditText encoderEdit = findViewById(R.id.editText_video_encoder);
 
         CompoundButton a_Switch0 = findViewById(R.id.switch0);
         CompoundButton a_Switch1 = findViewById(R.id.switch1);
         CompoundButton audioEnableSwitch = findViewById(R.id.switch_audio_enable);
+        CompoundButton rootModeSwitch = findViewById(R.id.switch_root_mode);
+        rootMode = rootModeSwitch != null && rootModeSwitch.isChecked();
+        PreUtils.put(context, Constant.ROOT_MODE, rootMode);
+        streamPriority = getResources().getStringArray(R.array.options_priority_values)[priorityIndex];
         PreUtils.put(context, Constant.CONTROL_NO, a_Switch0.isChecked());
         PreUtils.put(context, Constant.CONTROL_NAV, a_Switch1.isChecked());
         PreUtils.put(context, Constant.AUDIO_FORWARD, audioEnableSwitch.isChecked());
@@ -980,6 +1020,22 @@ public class MainActivity extends AppCompatActivity implements Scrcpy.ServiceCal
         delayControl = getResources().getIntArray(R.array.options_delay_values)[delayIndex];
         videoEncoder = encoderEdit.getText() == null ? "" : encoderEdit.getText().toString().trim();
         PreUtils.put(context, Constant.PREFERENCE_VIDEO_ENCODER, videoEncoder);
+    }
+
+    /** Server options from the current settings (call getAttributes() first). */
+    private Options buildServerOptions() {
+        Options options = new Options();
+        options.setIp(Scrcpy.LOCAL_IP);
+        options.setMaxSize(Math.max(screenHeight, screenWidth));
+        options.setBitRate(videoBitrate);
+        options.setTunnelForward(true);
+        options.setEnableAudioForward(PreUtils.get(context, Constant.AUDIO_FORWARD, true));
+        options.setVideoCodec(videoCodec);
+        options.setVideoEncoder(videoEncoder);
+        options.setFrameRate(videoFrameRate);
+        options.setPriority(streamPriority);
+        options.setRootMode(rootMode);
+        return options;
     }
 
     private String[] getHistoryList() {
@@ -1082,6 +1138,7 @@ public class MainActivity extends AppCompatActivity implements Scrcpy.ServiceCal
             return;
         }
         linearLayout.setPadding(0, 0, 0, 0);
+        setSurfaceMargins(0, 0);
         linearLayout.post(() -> {
             if (serviceBound && scrcpy != null) {
                 set_display_nd_touch();
@@ -1459,15 +1516,7 @@ public class MainActivity extends AppCompatActivity implements Scrcpy.ServiceCal
                     final String resolutionMessage = formatResolutionMessage(autoResolution, false);
                     ThreadUtils.post(() -> updateResolutionInfoText(resolutionMessage));
                 }
-                Options options = new Options();
-                options.setIp(Scrcpy.LOCAL_IP);
-                options.setMaxSize(Math.max(screenHeight, screenWidth));
-                options.setBitRate(videoBitrate);
-                options.setTunnelForward(true);
-                options.setEnableAudioForward(PreUtils.get(context, Constant.AUDIO_FORWARD, true));
-                options.setVideoCodec(videoCodec);
-                options.setVideoEncoder(videoEncoder);
-                options.setFrameRate(videoFrameRate);
+                Options options = buildServerOptions();
                 SendCommands.CmdStatus sendStatus = sendCommands.SendAdbCommands(context, serverHost,
                         serverPort,
                         localForwardPort,
@@ -1833,9 +1882,9 @@ public class MainActivity extends AppCompatActivity implements Scrcpy.ServiceCal
                 AdbHelper.writeAssetsJarServer(App.mContext);
                 File jar = AdbHelper.getServerJarFile(context);
                 adb = UsbAdb.connect(context, usbManager, device);
-                adb.startServerAndForward(jar, Scrcpy.LOCAL_FORWART_PORT, Scrcpy.LOCAL_IP,
-                        videoBitrate, Math.max(screenHeight, screenWidth),
-                        PreUtils.get(context, Constant.AUDIO_FORWARD, true));
+                Options options = buildServerOptions();
+                adb.startServerAndForward(jar, Scrcpy.LOCAL_FORWART_PORT, options.optionsToArgs(),
+                        options.isRootMode());
                 usbAdb = adb;
                 adb = null;  // 所有权已转移给 usbAdb，防止 catch 误关
                 ThreadUtils.post(() -> {

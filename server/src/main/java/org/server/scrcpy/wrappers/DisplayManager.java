@@ -139,6 +139,59 @@ public final class DisplayManager {
         return dm.createVirtualDisplay(name, width, height, dpi, surface, flags);
     }
 
+    private static final int VIRTUAL_DISPLAY_FLAG_PUBLIC = 0x00000001;
+    private static final int VIRTUAL_DISPLAY_FLAG_SECURE = 0x00000004;
+    private static final int VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR = 0x00000010;
+
+    /**
+     * Mirror of the default display that also shows secure content (lock screen
+     * PIN pad, FLAG_SECURE apps). Needs CAPTURE_SECURE_VIDEO_OUTPUT, which only
+     * root/system have, so this is used only when the server runs as root.
+     */
+    public VirtualDisplay createSecureMirrorVirtualDisplay(String name, int width, int height, int dpi, Surface surface)
+            throws Exception {
+        int density = dpi > 0 ? dpi : 160;
+        int[] flagSets = {
+                VIRTUAL_DISPLAY_FLAG_SECURE | VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                VIRTUAL_DISPLAY_FLAG_SECURE | VIRTUAL_DISPLAY_FLAG_PUBLIC | VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+        };
+        // Root has no package: try the shell package first, then no package name at all.
+        android.content.Context[] contexts = {
+                org.server.scrcpy.util.FakeContext.get(),
+                new android.content.ContextWrapper(org.server.scrcpy.util.FakeContext.get()) {
+                    @Override
+                    public String getPackageName() {
+                        return null;
+                    }
+
+                    @Override
+                    public String getOpPackageName() {
+                        return null;
+                    }
+                },
+        };
+        Exception last = null;
+        for (android.content.Context context : contexts) {
+            for (int flags : flagSets) {
+                try {
+                    java.lang.reflect.Constructor<android.hardware.display.DisplayManager> ctor =
+                            android.hardware.display.DisplayManager.class.getDeclaredConstructor(android.content.Context.class);
+                    ctor.setAccessible(true);
+                    android.hardware.display.DisplayManager dm = ctor.newInstance(context);
+                    VirtualDisplay display = dm.createVirtualDisplay(name, width, height, density, surface, flags);
+                    if (display != null) {
+                        Ln.i("Secure VirtualDisplay created, flags=0x" + Integer.toHexString(flags));
+                        return display;
+                    }
+                } catch (Exception e) {
+                    last = e;
+                    Ln.w("Secure VirtualDisplay flags=0x" + Integer.toHexString(flags) + " failed: " + e);
+                }
+            }
+        }
+        throw last != null ? last : new IllegalStateException("Secure VirtualDisplay not created");
+    }
+
     public VirtualDisplay createMirrorVirtualDisplay(String name, int width, int height, int dpi, Surface surface) throws Exception {
         int density = dpi > 0 ? dpi : 160;
         Ln.i("Creating AUTO_MIRROR VirtualDisplay dpi=" + density + " " + width + "x" + height);

@@ -6,6 +6,11 @@ public class Options {
     public static final String CODEC_H265 = "h265";
     public static final String DEFAULT_ENCODER = "-";
 
+    /** Streaming priority: keep the defaults / keep the frame rate / keep the picture quality. */
+    public static final String PRIORITY_BALANCED = "balanced";
+    public static final String PRIORITY_FPS = "fps";
+    public static final String PRIORITY_QUALITY = "quality";
+
     private String ip;
     private int maxSize;
     private int bitRate;
@@ -14,6 +19,7 @@ public class Options {
     private String videoCodec = CODEC_H264;
     private String videoEncoder = DEFAULT_ENCODER;
     private int frameRate = 60;
+    private String priority = PRIORITY_BALANCED;
 
     public String getIp() {
         return ip;
@@ -83,6 +89,18 @@ public class Options {
         this.frameRate = frameRate > 0 ? frameRate : 60;
     }
 
+    public String getPriority() {
+        return priority;
+    }
+
+    public void setPriority(String priority) {
+        if (PRIORITY_FPS.equals(priority) || PRIORITY_QUALITY.equals(priority)) {
+            this.priority = priority;
+        } else {
+            this.priority = PRIORITY_BALANCED;
+        }
+    }
+
     public String getVideoMimeType() {
         return mimeForCodec(videoCodec);
     }
@@ -125,6 +143,9 @@ public class Options {
         if (args.length > 7) {
             options.setFrameRate(Integer.parseInt(args[7]));
         }
+        if (args.length > 8) {
+            options.setPriority(args[8]);
+        }
         return options;
     }
 
@@ -137,7 +158,8 @@ public class Options {
                 String.valueOf(enableAudioForward),
                 videoCodec,
                 hasCustomEncoder() ? videoEncoder : DEFAULT_ENCODER,
-                Integer.toString(frameRate)
+                Integer.toString(frameRate),
+                priority
         };
     }
 }

@@ -9,7 +9,13 @@ public class Constant {
     public static final String CONTROL_REMOTE_ADDR = "control_remote_addr";
 
     public static final String PREFERENCE_SPINNER_RESOLUTION = "spinner_resolution";
-    public static final String PREFERENCE_SPINNER_BITRATE = "spinner_bitrate";
+    /** v2: higher bitrates were added at the top of options_bitrate_keys. */
+    public static final String PREFERENCE_SPINNER_BITRATE = "spinner_bitrate_v2";
+    public static final String PREFERENCE_SPINNER_BITRATE_LEGACY = "spinner_bitrate";
+    /** Number of entries added before the old first entry (8 Mbps). */
+    public static final int BITRATE_OPTIONS_ADDED = 6;
+    public static final String PREFERENCE_SPINNER_PRIORITY = "spinner_stream_priority";
+    public static final String ROOT_MODE = "root_mode";
 
   /** Index of the "Auto" entry in {@code options_resolution_values}. */
     public static final int RESOLUTION_AUTO_INDEX = 0;

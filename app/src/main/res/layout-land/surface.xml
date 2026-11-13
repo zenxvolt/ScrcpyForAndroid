@@ -1,77 +1,70 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Mirror screen. Inflated without the app theme: no ?attr references here. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/container1"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@android:color/background_dark"
-    android:orientation="horizontal"
-    android:weightSum="2">
+    android:background="#FF000000"
+    android:orientation="horizontal">
 
     <SurfaceView
         android:id="@+id/decoder_surface"
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_weight="1" />
 
     <LinearLayout
         android:id="@+id/nav_button_bar"
-        android:layout_width="100dp"
+        android:layout_width="52dp"
         android:layout_height="match_parent"
-        android:background="@android:color/background_dark"
+        android:background="#FF121316"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
         android:visibility="gone"
-        android:orientation="vertical">
+        tools:visibility="visible">
 
-
-        <Button
-            android:id="@+id/appswitch_button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:background="@android:color/background_dark"
-            android:text="@string/appswitch_button"
-            android:textColor="@android:color/white"
-            android:textSize="28sp"
-            style="?android:attr/buttonBarButtonStyle" />
-
-        <Button
-            android:id="@+id/home_button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:rotation="90"
-            android:background="@android:color/background_dark"
-            android:text="@string/home_button"
-            android:textAlignment="center"
-            android:textColor="@android:color/white"
-            android:textSize="24sp"
-            style="?android:attr/buttonBarButtonStyle" />
-
-        <Button
-            android:id="@+id/back_button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:background="@android:color/background_dark"
-            android:rotation="90"
-            android:textAlignment="center"
-            android:text="@string/back_button"
-            android:textColor="@android:color/white"
-            android:textSize="20sp"
-            style="?android:attr/buttonBarButtonStyle" />
-
-        <Button
+        <ImageButton
             android:id="@+id/power_button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
             android:layout_weight="1"
-            android:background="@android:color/background_dark"
-            android:rotation="90"
-            android:textAlignment="center"
-            android:text="@string/power_button"
-            android:textColor="@android:color/white"
-            android:textSize="24sp"
-            style="?android:attr/buttonBarButtonStyle" />
+            android:background="@drawable/bg_nav_button"
+            android:contentDescription="Power"
+            android:scaleType="center"
+            android:src="@drawable/ic_nav_power" />
+
+        <ImageButton
+            android:id="@+id/appswitch_button"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_nav_button"
+            android:contentDescription="Recent apps"
+            android:scaleType="center"
+            android:src="@drawable/ic_nav_recents" />
+
+        <ImageButton
+            android:id="@+id/home_button"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_nav_button"
+            android:contentDescription="Home"
+            android:scaleType="center"
+            android:src="@drawable/ic_nav_home" />
+
+        <ImageButton
+            android:id="@+id/back_button"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_nav_button"
+            android:contentDescription="Back"
+            android:scaleType="center"
+            android:src="@drawable/ic_nav_back" />
 
     </LinearLayout>
 

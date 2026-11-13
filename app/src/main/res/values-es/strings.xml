@@ -97,14 +97,6 @@
     <item>60</item>
     <item>30</item>
   </integer-array>
-  <string-array name="options_bitrate_keys">
-    <item>8 Mbps</item>
-    <item>6 Mbps</item>
-    <item>4 Mbps</item>
-    <item>2 Mbps</item>
-    <item>1 Mbps</item>
-    <item>512 Kbps</item>
-  </string-array>
   <integer-array name="options_bitrate_values">
     <item>8388608</item>
     <item>6144000</item>

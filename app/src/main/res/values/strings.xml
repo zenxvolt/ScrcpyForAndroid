@@ -52,6 +52,10 @@
     <string name="switch0">Viewing mode (no control)</string>
     <string name="switch1">Bottom control button (back button)</string>
     <string name="switch_audio">Enable audio forwarding</string>
+    <string name="label_stream_priority">Priority</string>
+    <string name="helper_stream_priority">Smooth keeps the frame rate steady (picture may blur in busy scenes). Sharp keeps the picture crisp (frame rate may drop). On a fast local Wi-Fi, also raise the bitrate.</string>
+    <string name="switch_root_mode">Root mode (show lock screen PIN and secure apps)</string>
+    <string name="helper_root_mode">Target must be rooted, with root (su) granted to “Shell”. Also allows control without “USB debugging (Security settings)” on Xiaomi.</string>
 
     <string name="connect_tips">Tips: You need to enable wireless debugging on your phone\n\t\tReset adb port command: adb tcpip 5555</string>
     <string name="please_wait">Connecting …</string>
@@ -108,7 +112,7 @@
     <string name="connect_error_bad_address">%1$s is not a valid address.</string>
     <string name="connect_error_offline">%1$s is connected but offline.\n\nTurn Wireless debugging off and on again on the target device (or re-plug USB), then retry.</string>
     <string name="connect_error_unknown">Could not connect to %1$s.</string>
-    <string name="connect_error_server">Connected to %1$s, but the scrcpy server could not be started on it. Make sure the target device is unlocked and retry.</string>
+    <string name="connect_error_server">Connected to %1$s, but the scrcpy server could not be started on it. Make sure the target device is unlocked and retry. If Root mode is on, check that root (su) is granted to “Shell” on the target.</string>
     <string name="connect_error_stream_timeout">The device did not send any video. Unlock it and try again, or pick a lower resolution / H.264.</string>
 
     <string name="discover_title">Devices on this network</string>
@@ -186,6 +190,12 @@
     </integer-array>
 
     <string-array name="options_bitrate_keys">
+        <item>50 Mbps</item>
+        <item>40 Mbps</item>
+        <item>32 Mbps</item>
+        <item>24 Mbps</item>
+        <item>16 Mbps</item>
+        <item>12 Mbps</item>
         <item>8 Mbps</item>
         <item>6 Mbps</item>
         <item>4 Mbps</item>
@@ -195,6 +205,12 @@
     </string-array>
 
     <integer-array name="options_bitrate_values">
+        <item>50000000</item>
+        <item>40000000</item>
+        <item>32000000</item>
+        <item>24000000</item>
+        <item>16000000</item>
+        <item>12000000</item>
         <item>8388608</item>
         <item>6144000</item>
         <item>4096000</item>
@@ -211,6 +227,18 @@
     <string-array name="options_codec_values">
         <item>h264</item>
         <item>h265</item>
+    </string-array>
+
+    <string-array name="options_priority_keys">
+        <item>Balanced</item>
+        <item>Smooth (prioritize FPS)</item>
+        <item>Sharp (prioritize quality)</item>
+    </string-array>
+
+    <string-array name="options_priority_values">
+        <item>balanced</item>
+        <item>fps</item>
+        <item>quality</item>
     </string-array>
 
     <string-array name="options_fps_keys">
