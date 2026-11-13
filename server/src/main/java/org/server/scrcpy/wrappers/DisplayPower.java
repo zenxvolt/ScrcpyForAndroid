@@ -24,8 +24,12 @@ public final class DisplayPower {
     private DisplayPower() {
     }
 
-    /** @return true when the mode was applied to at least one physical display */
     public static boolean setPowerMode(int mode) {
+        return setPowerMode(mode, true);
+    }
+
+    /** @return true when the mode was applied to at least one physical display */
+    public static boolean setPowerMode(int mode, boolean log) {
         boolean applied = false;
         try {
             Class<?> surfaceControl = Class.forName("android.view.SurfaceControl");
@@ -35,14 +39,18 @@ public final class DisplayPower {
                     setMode.invoke(null, token, mode);
                     applied = true;
                 } catch (Exception e) {
-                    Ln.w("setDisplayPowerMode failed: " + e);
+                    if (log) {
+                        Ln.w("setDisplayPowerMode failed: " + e);
+                    }
                 }
             }
         } catch (Exception e) {
             Ln.w("Display power control unavailable: " + e);
         }
-        Ln.i("Physical display power mode " + (mode == POWER_MODE_OFF ? "OFF" : "NORMAL")
-                + (applied ? "" : " (not applied)"));
+        if (log || !applied) {
+            Ln.i("Physical display power mode " + (mode == POWER_MODE_OFF ? "OFF" : "NORMAL")
+                    + (applied ? "" : " (not applied)"));
+        }
         return applied;
     }
 

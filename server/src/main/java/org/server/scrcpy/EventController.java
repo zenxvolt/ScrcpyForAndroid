@@ -44,6 +44,9 @@ public class EventController {
     private boolean proximity = false;
     /** Ignore the rest of the gesture whose first touch only woke the device up. */
     private boolean swallowGesture = false;
+    /** Last time we sent KEYCODE_WAKEUP (uptime ms). */
+    private volatile long lastWakeAt = 0;
+    private Thread panelKeeper;
 
     public EventController(Device device, DroidConnection connection, ScreenEncoder screenEncoder) {
         this.device = device;
@@ -108,13 +111,21 @@ public class EventController {
             int action = buffer[0];
             if (!proximity && !device.isScreenOn()) {
                 // Screen off / always-on display: the first touch wakes the device up
-                // (KEYCODE_WAKEUP never turns it off, unlike POWER). The touch itself is
-                // not delivered, so nothing is opened by accident.
+                // (KEYCODE_WAKEUP never turns it off, unlike POWER).
                 if (action == MotionEvent.ACTION_DOWN) {
+                    Ln.i("Touch while not interactive (screenOffMode=" + isScreenOffMode() + ")");
                     wakeUp();
-                    swallowGesture = true;
+                    if (!isScreenOffMode()) {
+                        // Normal mode: do not deliver the waking touch, so nothing opens by accident.
+                        swallowGesture = true;
+                        return;
+                    }
+                    // Screen-off mode: some ROMs (MIUI) report "not interactive" while the panel
+                    // is forced off, so swallowing here would eat every swipe on the lock
+                    // screen. Deliver the gesture.
+                } else if (!isScreenOffMode()) {
+                    return;
                 }
-                return;
             }
             if (swallowGesture) {
                 if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
@@ -342,20 +353,50 @@ public class EventController {
      * in "screen off" mode, switch the physical panel off again once Android is
      * awake: mirroring and control keep working with a dark panel.
      */
+    private boolean isScreenOffMode() {
+        return device.getOptions() != null && device.getOptions().isScreenOff();
+    }
+
     private void wakeUp() {
-        if (!device.isScreenOn()) {
+        long now = SystemClock.uptimeMillis();
+        // Never fire wake-ups back to back (that made the panel blink).
+        if (!device.isScreenOn() && now - lastWakeAt > 1500) {
             Ln.i("Device asleep: waking it up");
+            lastWakeAt = now;
             injectKeycode(KeyEvent.KEYCODE_WAKEUP);
         }
-        if (device.getOptions() != null && device.getOptions().isScreenOff()) {
-            new Thread(() -> {
-                SystemClock.sleep(1200);
+        if (isScreenOffMode()) {
+            startPanelKeeper();
+        }
+    }
+
+    /**
+     * Screen-off mode: one background thread keeps the physical panel dark.
+     * Android (keyguard, wake-ups) may switch the panel back on; it is turned
+     * off again within a second. setDisplayPowerMode is a no-op when the mode
+     * does not change, so re-applying it is cheap.
+     */
+    private synchronized void startPanelKeeper() {
+        if (panelKeeper != null) {
+            return;
+        }
+        panelKeeper = new Thread(() -> {
+            boolean first = true;
+            while (true) {
+                SystemClock.sleep(1000);
+                // Leave time for a wake-up to finish before darkening the panel.
+                if (SystemClock.uptimeMillis() - lastWakeAt < 1500) {
+                    continue;
+                }
                 if (device.isScreenOn()) {
                     org.server.scrcpy.wrappers.DisplayPower.setPowerMode(
-                            org.server.scrcpy.wrappers.DisplayPower.POWER_MODE_OFF);
+                            org.server.scrcpy.wrappers.DisplayPower.POWER_MODE_OFF, first);
+                    first = false;
                 }
-            }, "panel-off").start();
-        }
+            }
+        }, "panel-keeper");
+        panelKeeper.setDaemon(true);
+        panelKeeper.start();
     }
 
 }
