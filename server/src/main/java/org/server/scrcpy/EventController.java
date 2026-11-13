@@ -110,21 +110,13 @@ public class EventController {
             int action = buffer[0];
             if (!proximity && !device.isScreenOn()) {
                 // Screen off / always-on display: the first touch wakes the device up
-                // (KEYCODE_WAKEUP never turns it off, unlike POWER).
+                // (KEYCODE_WAKEUP never turns it off, unlike POWER). The touch itself is
+                // not delivered, so nothing is opened by accident.
                 if (action == MotionEvent.ACTION_DOWN) {
-                    Ln.i("Touch while not interactive (screenOffMode=" + isScreenOffMode() + ")");
                     wakeUp();
-                    if (!isScreenOffMode()) {
-                        // Normal mode: do not deliver the waking touch, so nothing opens by accident.
-                        swallowGesture = true;
-                        return;
-                    }
-                    // Screen-off mode: some ROMs (MIUI) report "not interactive" while the panel
-                    // is forced off, so swallowing here would eat every swipe on the lock
-                    // screen. Deliver the gesture.
-                } else if (!isScreenOffMode()) {
-                    return;
+                    swallowGesture = true;
                 }
+                return;
             }
             if (swallowGesture) {
                 if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
@@ -352,10 +344,6 @@ public class EventController {
      * in "screen off" mode, switch the physical panel off again once Android is
      * awake: mirroring and control keep working with a dark panel.
      */
-    private boolean isScreenOffMode() {
-        return device.getOptions() != null && device.getOptions().isScreenOff();
-    }
-
     private void wakeUp() {
         long now = SystemClock.uptimeMillis();
         // Never fire wake-ups back to back (that made the panel blink).
@@ -364,13 +352,8 @@ public class EventController {
             lastWakeAt = now;
             injectKeycode(KeyEvent.KEYCODE_WAKEUP);
         }
-        if (isScreenOffMode()) {
-            startPanelKeeper();
-        }
     }
 
-    private void startPanelKeeper() {
-        ScreenOffController.start(device, () -> lastWakeAt);
-    }
+
 
 }

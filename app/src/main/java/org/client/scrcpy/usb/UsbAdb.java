@@ -153,17 +153,14 @@ public class UsbAdb {
             throws IOException, InterruptedException {
         startServerAndForward(localFile, localForwardPort,
                 new String[]{serverIp, String.valueOf(size), String.valueOf(bitrate), "true",
-                        String.valueOf(enableAudio)},
-                false);
+                        String.valueOf(enableAudio)});
     }
 
     /**
      * Push the server jar, set up port forwarding and launch the scrcpy server
      * with the given server arguments ({@code Options#optionsToArgs()}).
-     *
-     * @param root start the server through su (secure content capture)
      */
-    public void startServerAndForward(File localFile, int localForwardPort, String[] serverArgs, boolean root)
+    public void startServerAndForward(File localFile, int localForwardPort, String[] serverArgs)
             throws IOException, InterruptedException {
         pushFile(localFile, REMOTE_JAR_PATH);
 
@@ -176,7 +173,7 @@ public class UsbAdb {
         for (String arg : serverArgs) {
             server.append(' ').append(arg);
         }
-        String command = root ? "shell:su -c '" + server + "'" : "shell:" + server;
+        String command = "shell:" + server;
         serverStream = connection.open(command, STREAM_TIMEOUT_MS);
         Log.i(TAG, "USB scrcpy server launched: " + command);
     }

@@ -141,32 +141,19 @@ public class SendCommands {
         return status.get();
     }
 
-    /**
-     * adb arguments that start the scrcpy server on {@code serial}. In root mode
-     * the server runs through {@code su}, which lets it capture secure content
-     * such as the lock screen PIN pad (needs root on the target and su granted
-     * to the Shell user).
-     */
+    /** adb arguments that start the scrcpy server on {@code serial}. */
     static String[] buildServerCommand(String serial, Options options) {
         List<String> cmdList = new ArrayList<>();
-        Collections.addAll(cmdList, "-s", serial, "shell");
-        if (options.isRootMode()) {
-            StringBuilder server = new StringBuilder(
-                    "CLASSPATH=/data/local/tmp/scrcpy-server.jar app_process / org.server.scrcpy.Server");
-            for (String arg : options.optionsToArgs()) {
-                server.append(' ').append(arg);
-            }
-            Collections.addAll(cmdList, "su", "-c", "'" + server + "'");
-        } else {
-            Collections.addAll(cmdList,
-                    " CLASSPATH=/data/local/tmp/scrcpy-server.jar",
-                    "app_process",
-                    "/",
-                    "org.server.scrcpy.Server"
-            );
-            Collections.addAll(cmdList, options.optionsToArgs());
-            cmdList.add(";");
-        }
+        Collections.addAll(cmdList,
+                "-s", serial,
+                "shell",
+                " CLASSPATH=/data/local/tmp/scrcpy-server.jar",
+                "app_process",
+                "/",
+                "org.server.scrcpy.Server"
+        );
+        Collections.addAll(cmdList, options.optionsToArgs());
+        cmdList.add(";");
         return cmdList.toArray(new String[0]);
     }
 

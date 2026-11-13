@@ -17,10 +17,6 @@ public final class Server {
 
         ip = options.getIp();
         final Device device = new Device(options);
-        if (options.isScreenOff()) {
-            // Turn the physical panel back on when the server goes away.
-            Runtime.getRuntime().addShutdownHook(new Thread(ScreenOffController::restore));
-        }
         try (DroidConnection connection = DroidConnection.open(ip)) {
             ScreenEncoder screenEncoder = new ScreenEncoder(options);
 
@@ -35,10 +31,6 @@ public final class Server {
                 // this is expected on close
                 Ln.d("Screen streaming stopped");
 
-            }
-        } finally {
-            if (options.isScreenOff()) {
-                ScreenOffController.restore();
             }
         }
     }

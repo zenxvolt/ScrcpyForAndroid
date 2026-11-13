@@ -34,35 +34,6 @@ public class ScreenCapture {
             virtualDisplay = null;
         }
 
-        // Root (server started through su): capture secure content too, e.g. the
-        // lock screen PIN pad, which is black with the shell user's displays.
-        if (isRoot()) {
-            try {
-                virtualDisplay = ServiceManager.getDisplayManager()
-                        .createSecureMirrorVirtualDisplay("scrcpy", videoRect.width(), videoRect.height(),
-                                device.getDensityDpi(), surface);
-                Ln.i("Display: secure VirtualDisplay (root) " + videoRect.width() + "x" + videoRect.height());
-                return;
-            } catch (Exception e) {
-                Ln.w("Secure VirtualDisplay failed, trying secure SurfaceControl: " + e);
-            }
-            try {
-                display = SurfaceControl.createDisplay("scrcpy", true);
-                setDisplaySurface(display, surface, deviceRect, videoRect, layerStack);
-                Ln.i("Display: secure SurfaceControl (root)");
-                return;
-            } catch (Exception e) {
-                Ln.w("Secure SurfaceControl failed, using the regular capture: " + e);
-                if (display != null) {
-                    try {
-                        SurfaceControl.destroyDisplay(display);
-                    } catch (Throwable ignored) {
-                    }
-                    display = null;
-                }
-            }
-        }
-
         // Come scrcpy ufficiale: su Android 14+ createDisplay non esiste più.
         // Prima l'API nascosta DisplayManager.createVirtualDisplay(displayId),
         // poi SurfaceControl, infine AUTO_MIRROR.
@@ -93,10 +64,6 @@ public class ScreenCapture {
                 }
             }
         }
-    }
-
-    private static boolean isRoot() {
-        return android.os.Process.myUid() == 0;
     }
 
     public void release() {

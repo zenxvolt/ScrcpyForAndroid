@@ -54,10 +54,6 @@
     <string name="switch_audio">Enable audio forwarding</string>
     <string name="label_stream_priority">Priority</string>
     <string name="helper_stream_priority">Smooth keeps the frame rate steady (picture may blur in busy scenes). Sharp keeps the picture crisp (frame rate may drop). On a fast local Wi-Fi, also raise the bitrate.</string>
-    <string name="switch_screen_off">Turn target screen off while mirroring</string>
-    <string name="helper_screen_off">The target\'s display stays dark but keeps running, so you can still see and control it here. Saves power on a phone used as a server. The screen turns back on when you disconnect. Tap the mirror once to wake the target if it fell asleep.</string>
-    <string name="switch_root_mode">Root mode (show lock screen PIN and secure apps)</string>
-    <string name="helper_root_mode">Target must be rooted, with root (su) granted to “Shell”. Also allows control without “USB debugging (Security settings)” on Xiaomi.</string>
 
     <string name="connect_tips">Tips: You need to enable wireless debugging on your phone\n\t\tReset adb port command: adb tcpip 5555</string>
     <string name="please_wait">Connecting …</string>
@@ -114,7 +110,7 @@
     <string name="connect_error_bad_address">%1$s is not a valid address.</string>
     <string name="connect_error_offline">%1$s is connected but offline.\n\nTurn Wireless debugging off and on again on the target device (or re-plug USB), then retry.</string>
     <string name="connect_error_unknown">Could not connect to %1$s.</string>
-    <string name="connect_error_server">Connected to %1$s, but the scrcpy server could not be started on it. Make sure the target device is unlocked and retry. If Root mode is on, check that root (su) is granted to “Shell” on the target.</string>
+    <string name="connect_error_server">Connected to %1$s, but the scrcpy server could not be started on it. Make sure the target device is unlocked and retry.</string>
     <string name="connect_error_stream_timeout">The device did not send any video. Unlock it and try again, or pick a lower resolution / H.264.</string>
 
     <string name="discover_title">Devices on this network</string>
