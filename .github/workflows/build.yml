@@ -75,16 +75,24 @@ jobs:
           echo "App version: $VERSION_NAME ($VERSION_CODE)"
 
       # ---------------------------------------------------------------- libadb
+      # Cache key from the git-tracked build scripts only: the build downloads
+      # AOSP sources into platform-tools-34/, which must not affect the key.
+      - name: Compute libadb cache key
+        id: libadb-key
+        run: |
+          HASH=$(git ls-files -s platform-tools-34 | sha256sum | cut -c1-16)
+          echo "key=libadb-${NDK_VERSION}-${HASH}" >> "$GITHUB_OUTPUT"
+
       - name: Restore libadb.so cache
         id: libadb-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             app/src/main/jniLibs/arm64-v8a/libadb.so
             app/src/main/jniLibs/armeabi-v7a/libadb.so
             app/src/main/jniLibs/x86/libadb.so
             app/src/main/jniLibs/x86_64/libadb.so
-          key: libadb-${{ env.NDK_VERSION }}-${{ hashFiles('platform-tools-34/**') }}
+          key: ${{ steps.libadb-key.outputs.key }}
 
       - name: Free disk space (for AOSP sources)
         if: steps.libadb-cache.outputs.cache-hit != 'true'
@@ -114,6 +122,19 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew :app:buildLibadb -PforceLibadb --stacktrace
+
+      # Saved right away so a later failure (e.g. a Java compile error) does not
+      # force the slow libadb build again on the next run.
+      - name: Save libadb.so cache
+        if: steps.libadb-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            app/src/main/jniLibs/arm64-v8a/libadb.so
+            app/src/main/jniLibs/armeabi-v7a/libadb.so
+            app/src/main/jniLibs/x86/libadb.so
+            app/src/main/jniLibs/x86_64/libadb.so
+          key: ${{ steps.libadb-key.outputs.key }}
 
       - name: Verify libadb.so
         run: |
@@ -158,7 +179,7 @@ jobs:
         run: rm -f app/scrcpy.jks
 
       - name: Upload debug APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ScrcpyForAndroid-${{ steps.version.outputs.name }}-${{ steps.version.outputs.short_sha }}-debug
           path: app/build/outputs/apk/scrcpy/debug/*.apk
@@ -167,7 +188,7 @@ jobs:
 
       - name: Upload release APK
         if: steps.keystore.outputs.available == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ScrcpyForAndroid-${{ steps.version.outputs.name }}-${{ steps.version.outputs.short_sha }}-release
           path: app/build/outputs/apk/scrcpy/release/*.apk
