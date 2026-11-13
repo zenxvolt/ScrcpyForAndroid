@@ -1,14 +1,48 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools">
+<resources>
+    <!-- Legacy colors still used by the floating window / mirror screen -->
     <color name="white">#f5f5f5</color>
     <color name="black">#000000</color>
-
-    <color name="status_bar">#3C93F0</color>
-
-    <color name="status_online">#2ECC71</color>
-    <color name="status_offline">#E74C3C</color>
-
+    <color name="status_bar">#0061A4</color>
     <color name="btn_color_nomal">#323540</color>
-
     <color name="theme_color">#1D2228</color>
+
+    <!-- Connection status (harmonised greens / reds) -->
+    <color name="status_online">#1E8E3E</color>
+    <color name="status_offline">#BA1A1A</color>
+    <color name="status_online_container">#C4EED0</color>
+    <color name="status_offline_container">#FFDAD6</color>
+
+    <!-- Material 3 fallback palette (light), seed #3C93F0 -->
+    <color name="md_primary">#0061A4</color>
+    <color name="md_on_primary">#FFFFFF</color>
+    <color name="md_primary_container">#D1E4FF</color>
+    <color name="md_on_primary_container">#001D36</color>
+    <color name="md_secondary">#535F70</color>
+    <color name="md_on_secondary">#FFFFFF</color>
+    <color name="md_secondary_container">#D7E3F7</color>
+    <color name="md_on_secondary_container">#101C2B</color>
+    <color name="md_tertiary">#6B5778</color>
+    <color name="md_on_tertiary">#FFFFFF</color>
+    <color name="md_tertiary_container">#F2DAFF</color>
+    <color name="md_on_tertiary_container">#251431</color>
+    <color name="md_error">#BA1A1A</color>
+    <color name="md_on_error">#FFFFFF</color>
+    <color name="md_error_container">#FFDAD6</color>
+    <color name="md_on_error_container">#410002</color>
+    <color name="md_surface">#F8F9FF</color>
+    <color name="md_on_surface">#191C20</color>
+    <color name="md_surface_variant">#DFE2EB</color>
+    <color name="md_on_surface_variant">#43474E</color>
+    <color name="md_outline">#73777F</color>
+    <color name="md_outline_variant">#C3C7CF</color>
+    <color name="md_surface_container_lowest">#FFFFFF</color>
+    <color name="md_surface_container_low">#F2F3FA</color>
+    <color name="md_surface_container">#ECEEF4</color>
+    <color name="md_surface_container_high">#E6E8EE</color>
+    <color name="md_surface_container_highest">#E1E2E8</color>
+
+    <!-- Terminal (always dark, independent of theme) -->
+    <color name="terminal_background">#0E1116</color>
+    <color name="terminal_text">#E0E6ED</color>
 </resources>

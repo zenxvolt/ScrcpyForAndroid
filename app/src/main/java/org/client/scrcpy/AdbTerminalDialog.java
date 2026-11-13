@@ -16,7 +16,6 @@ import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
-import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -43,7 +42,7 @@ public class AdbTerminalDialog extends Dialog {
     private ProgressBar consoleProgress;
     private EditText editCommand;
     private Button btnRun;
-    private LinearLayout layoutApplyIp;
+    private View layoutApplyIp;
     private TextView tvDetectedIp;
     private Button btnApplyIp;
 
@@ -57,7 +56,7 @@ public class AdbTerminalDialog extends Dialog {
     private static final Pattern IP_PORT_PATTERN = Pattern.compile("(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}):?(\\d{1,5})?");
 
     public AdbTerminalDialog(Activity activity, String defaultTargetIp, OnIpSelectedListener ipSelectedListener) {
-        super(activity);
+        super(activity, R.style.ThemeOverlay_App_CardDialog);
         this.activity = activity;
         this.defaultTargetIp = defaultTargetIp != null ? defaultTargetIp.trim() : "";
         this.ipSelectedListener = ipSelectedListener;

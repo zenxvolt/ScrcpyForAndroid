@@ -13,6 +13,8 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * High level entry point for driving a device over USB using a pure-Java ADB
@@ -164,6 +166,76 @@ public class UsbAdb {
                 + " " + enableAudio;
         serverStream = connection.open(command, STREAM_TIMEOUT_MS);
         Log.i(TAG, "USB scrcpy server launched: " + command);
+    }
+
+    /**
+     * Open an ADB service (for example {@code shell:getprop} or
+     * {@code tcpip:5555}) and collect everything it prints until the stream
+     * closes or {@code timeoutMs} elapses.
+     */
+    public String runService(String service, long timeoutMs) throws IOException, InterruptedException {
+        AdbStream stream = connection.open(service, STREAM_TIMEOUT_MS);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        try {
+            while (true) {
+                long left = deadline - System.currentTimeMillis();
+                if (left <= 0) {
+                    break;
+                }
+                byte[] data = stream.read(left);
+                if (data == null) {
+                    break;
+                }
+                out.write(data);
+            }
+        } finally {
+            stream.close();
+        }
+        return out.toString("UTF-8");
+    }
+
+    private static final Pattern INET_PATTERN =
+            Pattern.compile("inet\\s+(\\d{1,3}(?:\\.\\d{1,3}){3})");
+    private static final Pattern SRC_PATTERN =
+            Pattern.compile("src\\s+(\\d{1,3}(?:\\.\\d{1,3}){3})");
+
+    /**
+     * Best effort detection of the device's Wi-Fi IPv4 address, or null when
+     * the device is not connected to Wi-Fi.
+     */
+    public String findWifiIpAddress() throws IOException, InterruptedException {
+        String out = runService("shell:ip -f inet addr show wlan0", 5000);
+        Matcher matcher = INET_PATTERN.matcher(out);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        // Some devices name the interface differently: use the routing table.
+        out = runService("shell:ip route", 5000);
+        for (String line : out.split("\\r?\\n")) {
+            if (line.contains("wlan") || line.contains("wifi") || line.contains("eth")) {
+                Matcher src = SRC_PATTERN.matcher(line);
+                if (src.find()) {
+                    return src.group(1);
+                }
+            }
+        }
+        Matcher anySrc = SRC_PATTERN.matcher(out);
+        while (anySrc.find()) {
+            String ip = anySrc.group(1);
+            if (!ip.startsWith("127.") && !ip.startsWith("10.0.2.")) {
+                return ip;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Equivalent of {@code adb tcpip <port>}: restarts adbd on the device in
+     * TCP mode. The USB connection drops shortly after this call.
+     */
+    public String enableTcpip(int port) throws IOException, InterruptedException {
+        return runService("tcpip:" + port, 3000);
     }
 
     public void close() {

@@ -1,12 +1,20 @@
 package org.client.scrcpy;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
+
+import androidx.appcompat.app.AlertDialog;
+
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.textfield.TextInputEditText;
+import com.google.android.material.textfield.TextInputLayout;
+
+import org.client.scrcpy.utils.Util;
 
 import java.util.ArrayList;
 
@@ -154,18 +162,24 @@ public class Dialog implements Runnable {
         if (activity.isFinishing())
             return;
 
-        alert = new AlertDialog.Builder(activity).create();
+        alert = new MaterialAlertDialogBuilder(activity).create();
 
         alert.setTitle(title);
         alert.setCancelable(false);
         alert.setCanceledOnTouchOutside(false);
 
-        EditText et = new EditText(activity);
+        TextInputLayout inputLayout = new TextInputLayout(activity);
+        EditText et = new TextInputEditText(inputLayout.getContext());
         if (isEdit) {
-            et.setHint(hint);  // 设置旧的key数据
+            inputLayout.setHint(hint);  // 设置旧的key数据
             et.setText(message);  // 设置旧的key数据
             et.setGravity(Gravity.CENTER);
-            alert.setView(et); //给对话框添加一个EditText输入文本框
+            inputLayout.addView(et);
+            FrameLayout container = new FrameLayout(activity);
+            int pad = Util.dpToPx(24);
+            container.setPadding(pad, Util.dpToPx(8), pad, 0);
+            container.addView(inputLayout);
+            alert.setView(container); //给对话框添加一个EditText输入文本框
         } else {
             alert.setMessage(message);
         }

@@ -2,7 +2,7 @@
     <string name="app_name">ScrcpyForAndroid</string>
     <string name="app_title">Scrcpy For Android</string>
 
-    <string name="label_server_ip">Remote Device IP address, For example: 192.168.0.73</string>
+    <string name="label_server_ip">Remote device IP address, for example: 192.168.0.73</string>
     <string name="status_online">Online</string>
     <string name="status_offline">Offline</string>
     <string name="label_video_resolution">Resolution</string>
@@ -13,15 +13,15 @@
     <string name="label_video_encoder">Video encoder (optional)</string>
     <string name="hint_video_encoder">e.g. c2.android.avc.encoder (empty = default)</string>
     <string name="label_x">x</string>
-    <string name="action_start">Start</string>
-    <string name="action_start_usb">Connect via USB</string>
+    <string name="action_start">Start mirroring</string>
+    <string name="action_start_usb">USB cable (OTG)</string>
     <string name="history_delete">Delete</string>
     <string name="usb_no_device">No USB device detected. Connect a device with a USB cable.</string>
     <string name="usb_no_adb_interface">USB device found, but ADB is not available. Enable USB debugging on the target device and set the USB mode to allow it.</string>
     <string name="usb_permission_denied">USB permission denied</string>
     <string name="usb_connect_failed">USB connection failed:</string>
     <string name="action_adb_shell">ADB Shell</string>
-    <string name="action_adb_terminal">ADB Terminal / Pair</string>
+    <string name="action_adb_terminal">ADB terminal</string>
     <string name="dialog_adb_terminal_title">ADB Terminal (Pair / Commands)</string>
     <string name="dialog_adb_terminal_subtitle">Run adb commands directly (pair, connect, devices, tcpip)</string>
     <string name="dialog_adb_terminal_hint">e.g. pair 192.168.1.5:37000 123456</string>
@@ -64,8 +64,8 @@
 
     <string name="need_register">Registration required</string>
 
-    <string name="more_settings">More Settings ▼</string>
-    <string name="collapse_settings">Collapse Settings ▲</string>
+    <string name="more_settings">More settings</string>
+    <string name="collapse_settings">Fewer settings</string>
 
     <string name="resolution_auto">Auto</string>
     <string name="resolution_auto_need_ip">Enter remote IP to detect resolution</string>
@@ -75,6 +75,81 @@
     <string name="resolution_auto_remote">%1$dx%2$d — limited by remote device</string>
     <string name="resolution_auto_stream_local">Streaming %1$dx%2$d (local display limit)</string>
     <string name="resolution_auto_stream_remote">Streaming %1$dx%2$d (remote device limit)</string>
+
+    <!-- ===== Material You home screen ===== -->
+    <string name="section_target_device">Target device</string>
+    <string name="section_video">Video</string>
+    <string name="hint_server_ip">IP address of target device</string>
+    <string name="helper_server_ip">e.g. 192.168.0.73 or 192.168.0.73:5555</string>
+    <string name="history_title">Recent devices</string>
+    <string name="press_again_to_exit">Press back again to disconnect</string>
+    <string name="action_close">Close</string>
+    <string name="action_retry">Retry</string>
+    <string name="error_address_empty">Enter the IP address of the target device, or connect it with a USB cable</string>
+    <string name="error_address_invalid">That does not look like an IP address (example: 192.168.0.73:5555)</string>
+
+    <!-- ===== Connection helpers ===== -->
+    <string name="action_discover">Find devices</string>
+    <string name="action_pair">Pair (Android 11+)</string>
+    <string name="action_usb_to_wifi">USB → Wi-Fi</string>
+    <string name="action_how_to_connect">How to connect</string>
+
+    <string name="step_starting_adb">Starting ADB…</string>
+    <string name="step_connecting">Connecting to the target device…</string>
+    <string name="step_waiting_authorization">Unlock the target device and tap “Allow” on the debugging prompt…</string>
+    <string name="step_pushing_server">Uploading scrcpy server…</string>
+    <string name="step_starting_server">Starting screen mirroring…</string>
+
+    <string name="connect_error_title_unauthorized">Debugging not authorized</string>
+    <string name="connect_error_title_server">Could not start mirroring</string>
+    <string name="connect_error_unauthorized">%1$s did not allow debugging.\n\nUnlock the target device, then tap “Allow” on the “Allow debugging?” prompt. Tick “Always allow from this computer” so you are not asked again.</string>
+    <string name="connect_error_refused">%1$s was reached, but ADB is not listening on that port.\n\n• Android 11+: open Developer options → Wireless debugging and use the “IP address &amp; Port” shown there (the port changes every time), or use “Pair (Android 11+)”.\n• Any Android: plug the target in with a USB cable once and tap “USB → Wi-Fi”.</string>
+    <string name="connect_error_unreachable">Could not reach %1$s.\n\n• Make sure both phones are on the same Wi-Fi network (guest networks often block this).\n• Check the IP address in the target\'s Wi-Fi settings.\n• Mobile hotspot also works: connect one phone to the other\'s hotspot.</string>
+    <string name="connect_error_bad_address">%1$s is not a valid address.</string>
+    <string name="connect_error_offline">%1$s is connected but offline.\n\nTurn Wireless debugging off and on again on the target device (or re-plug USB), then retry.</string>
+    <string name="connect_error_unknown">Could not connect to %1$s.</string>
+    <string name="connect_error_server">Connected to %1$s, but the scrcpy server could not be started on it. Make sure the target device is unlocked and retry.</string>
+    <string name="connect_error_stream_timeout">The device did not send any video. Unlock it and try again, or pick a lower resolution / H.264.</string>
+
+    <string name="discover_title">Devices on this network</string>
+    <string name="discover_searching">Searching for devices with Wireless debugging enabled…</string>
+    <string name="discover_tap_to_use">Tap a device to use it</string>
+    <string name="discover_nothing_found">No device found yet.\n\nOn the target device open Developer options → Wireless debugging (Android 11+) and keep that screen open, or use USB → Wi-Fi.</string>
+    <string name="discover_kind_connect">Wireless debugging · %1$s</string>
+    <string name="discover_kind_pairing">Ready to pair · %1$s</string>
+    <string name="discover_kind_legacy">ADB over Wi-Fi · %1$s</string>
+
+    <string name="pair_title">Pair with pairing code</string>
+    <string name="pair_instructions">On the target device: Developer options → Wireless debugging → “Pair device with pairing code”. Enter the IP address &amp; port and the 6-digit code shown there.</string>
+    <string name="pair_address_hint">Pairing IP address &amp; port</string>
+    <string name="pair_address_helper">e.g. 192.168.0.73:37123</string>
+    <string name="pair_code_hint">Wi-Fi pairing code</string>
+    <string name="pair_connect_port_hint">Connect port (optional)</string>
+    <string name="pair_connect_port_helper">Detected automatically. Otherwise use the port under “IP address &amp; Port” on the Wireless debugging screen.</string>
+    <string name="pair_connect_port_required">Enter the port shown under “IP address &amp; Port”</string>
+    <string name="pair_error_address">Enter IP and port, e.g. 192.168.0.73:37123</string>
+    <string name="pair_error_code">The code has 6 digits</string>
+    <string name="pair_action">Pair &amp; connect</string>
+    <string name="pair_status_pairing">Pairing…</string>
+    <string name="pair_status_finding_port">Paired! Looking for the connection port…</string>
+    <string name="pair_status_need_port">Paired! Could not detect the connection port automatically — enter it below and tap “Pair &amp; connect” again (pairing is kept).</string>
+    <string name="pair_status_connecting">Paired! Connecting to %1$s…</string>
+    <string name="pair_status_failed">Pairing failed. Check the code (it changes every time the dialog is opened) and that the pairing dialog is still open.\n%1$s</string>
+    <string name="pair_status_paired_connect_failed">Paired, but connecting failed:\n%1$s</string>
+
+    <string name="usb_to_wifi_explain">Connect the target device to this phone with a USB (OTG) cable and enable USB debugging on it. This will switch it to ADB over Wi-Fi (port 5555) so you can unplug the cable and mirror wirelessly.</string>
+    <string name="usb_to_wifi_step_usb">Connecting over USB… (tap “Allow” on the target if asked)</string>
+    <string name="usb_to_wifi_step_ip">Reading the Wi-Fi IP address…</string>
+    <string name="usb_to_wifi_step_tcpip">Enabling ADB over Wi-Fi (port 5555)…</string>
+    <string name="usb_to_wifi_step_connect">Connecting to %1$s…</string>
+    <string name="usb_to_wifi_no_wifi">The target device is not connected to Wi-Fi. Connect it to the same Wi-Fi network as this phone.</string>
+    <string name="usb_to_wifi_failed_title">USB → Wi-Fi failed</string>
+    <string name="usb_to_wifi_failed">%1$s</string>
+    <string name="usb_to_wifi_done_title">Wi-Fi debugging enabled</string>
+    <string name="usb_to_wifi_done">%1$s is ready. You can unplug the USB cable now.\n\nThis lasts until the target device reboots.</string>
+
+    <string name="howto_title">How to connect</string>
+    <string name="howto_message">1. USB cable (easiest)\nEnable USB debugging on the target, plug it in with an OTG cable, then tap Start.\n\n2. USB → Wi-Fi\nPlug in once, tap “USB → Wi-Fi”, unplug. The target stays reachable on port 5555 until it reboots.\n\n3. Wireless debugging (Android 11+, no cable)\nOn the target: Developer options → Wireless debugging → “Pair device with pairing code”. Here: tap “Pair (Android 11+)” or “Find devices”.\n\nBoth phones must be on the same Wi-Fi network (or one on the other\'s hotspot).</string>
 
     <string-array name="options_resolution_keys">
         <item>Auto (native)</item>
@@ -99,7 +174,7 @@
     </string-array>
 
     <string-array name="options_delay_keys">
-        <item>Hight (100ms)</item>
+        <item>High (100ms)</item>
         <item>Medium (60ms)</item>
         <item>Low (30ms)</item>
     </string-array>

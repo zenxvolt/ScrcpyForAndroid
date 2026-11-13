@@ -1,7 +1,6 @@
 package org.client.scrcpy;
 
 import android.annotation.SuppressLint;
-import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -28,8 +27,15 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.activity.EdgeToEdge;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+
+import com.google.android.material.appbar.MaterialToolbar;
+
 import org.client.scrcpy.utils.ThreadUtils;
-import org.client.scrcpy.utils.Util;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -38,7 +44,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 
-public class AdbShellActivity extends Activity {
+public class AdbShellActivity extends AppCompatActivity {
 
     public static final String EXTRA_DEVICE = "device";
 
@@ -80,9 +86,20 @@ public class AdbShellActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        EdgeToEdge.enable(this);
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_adb_shell);
-        Util.applyStatusBarInset(findViewById(R.id.adb_shell_header), 48, null);
+        MaterialToolbar toolbar = findViewById(R.id.adb_shell_toolbar);
+        toolbar.setNavigationOnClickListener(v -> finish());
+        View inputBar = findViewById(R.id.adb_shell_input_bar);
+        final int barPadding = inputBar.getPaddingBottom();
+        ViewCompat.setOnApplyWindowInsetsListener(inputBar, (v, insets) -> {
+            Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars()
+                    | WindowInsetsCompat.Type.ime());
+            v.setPadding(barPadding + bars.left, v.getPaddingTop(),
+                    barPadding + bars.right, barPadding + bars.bottom);
+            return insets;
+        });
 
         outputView = findViewById(R.id.adb_shell_output);
         inputView = findViewById(R.id.adb_shell_input);
@@ -97,7 +114,7 @@ public class AdbShellActivity extends Activity {
 
         runButton.setOnClickListener(v -> sendCommand());
         inputView.setOnEditorActionListener((v, actionId, event) -> {
-            if (actionId == EditorInfo.IME_ACTION_DONE
+            if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_ACTION_SEND
                     || (event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER && event.getAction() == KeyEvent.ACTION_DOWN)) {
                 sendCommand();
                 return true;
@@ -105,6 +122,7 @@ public class AdbShellActivity extends Activity {
             return false;
         });
 
+        registerUsbPermissionReceiver();
         startShell();
     }
 
@@ -147,8 +165,10 @@ public class AdbShellActivity extends Activity {
 
     private void requestUsbPermission(UsbDevice usbDevice) {
         int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ? PendingIntent.FLAG_MUTABLE : 0;
-        PendingIntent permissionIntent = PendingIntent.getBroadcast(this, 0,
-                new Intent(ACTION_USB_PERMISSION), flags);
+        // Explicit (package-scoped) intent: a mutable PendingIntent wrapping an
+        // implicit intent throws on Android 14+ (targetSdk >= 34).
+        Intent intent = new Intent(ACTION_USB_PERMISSION).setPackage(getPackageName());
+        PendingIntent permissionIntent = PendingIntent.getBroadcast(this, 0, intent, flags);
         UsbManager usbManager = (UsbManager) getSystemService(Context.USB_SERVICE);
         usbManager.requestPermission(usbDevice, permissionIntent);
     }
@@ -323,10 +343,9 @@ public class AdbShellActivity extends Activity {
         scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN));
     }
 
+    /** Kept registered while paused: the USB permission dialog pauses this activity. */
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
-    @Override
-    protected void onResume() {
-        super.onResume();
+    private void registerUsbPermissionReceiver() {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 // RECEIVER_NOT_EXPORTED: still receives the system-sent USB permission result
@@ -339,12 +358,5 @@ public class AdbShellActivity extends Activity {
         }
     }
 
-    @Override
-    protected void onPause() {
-        super.onPause();
-        try {
-            unregisterReceiver(usbPermissionReceiver);
-        } catch (Exception ignored) {
-        }
-    }
+
 }

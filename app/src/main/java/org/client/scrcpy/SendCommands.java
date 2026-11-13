@@ -41,12 +41,38 @@ public class SendCommands {
         return SendAdbCommands(context, ip, port, forwardport, localip, bitrate, size, enableAudio);
     }
 
+    /** Detailed reason of the last failed {@link #SendAdbCommands} call. */
+    private volatile AdbHelper.ConnectResult lastFailure;
+    private volatile String lastFailureStep = "";
+
+    public AdbHelper.ConnectResult getLastFailure() {
+        return lastFailure;
+    }
+
+    /** Short description of the step that failed (push / forward / start). */
+    public String getLastFailureStep() {
+        return lastFailureStep;
+    }
+
     public CmdStatus SendAdbCommands(Context context, final String ip, int port, int forwardport, Options options) {
-        AtomicReference<CmdStatus> status = new AtomicReference<>(CmdStatus.RUNNING);
+        return SendAdbCommands(context, ip, port, forwardport, options, null);
+    }
+
+    /**
+     * Connect to {@code ip:port}, push the server, forward the port and start
+     * the scrcpy server. Must be called from a worker thread.
+     *
+     * @param listener optional progress listener (string resource per step)
+     */
+    public CmdStatus SendAdbCommands(Context context, final String ip, int port, int forwardport, Options options,
+                                     AdbHelper.ConnectListener listener) {
+        lastFailure = null;
+        lastFailureStep = "";
+        final String serial = ip + ":" + port;
 
         List<String> cmdList = new ArrayList<>();
         Collections.addAll(cmdList,
-                "-s", ip + ":" + port,
+                "-s", serial,
                 "shell",
                 " CLASSPATH=/data/local/tmp/scrcpy-server.jar",
                 "app_process",
@@ -57,26 +83,44 @@ public class SendCommands {
         cmdList.add(";");
         String[] commands = cmdList.toArray(new String[0]);
 
+        // 1. Make sure our private adb server is alive (it can hang after deep sleep).
+        reportStep(listener, R.string.step_starting_adb);
+        boolean serverIsRunning = AdbHelper.checkAdbServer();
+        Log.i("Scrcpy", "serverIsRunning: " + serverIsRunning);
+        if (!serverIsRunning || !AdbHelper.isRunning()) {
+            AdbHelper.restartAdb();
+            try {
+                AdbHelper.waitForRunning(5);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        // 2. Connect and wait for authorization (with a clear diagnosis on failure).
+        AdbHelper.ConnectResult connectResult = AdbHelper.connectDevice(context, ip, port, listener);
+        if (!connectResult.success) {
+            lastFailure = connectResult;
+            return CmdStatus.ERROR;
+        }
+
+        // 3. Push server, forward port, start server (guarded by a timeout).
+        AtomicReference<CmdStatus> status = new AtomicReference<>(CmdStatus.RUNNING);
         ThreadUtils.execute(() -> {
             try {
-                boolean serverIsRunning = AdbHelper.checkAdbServer();
-                Log.i("Scrcpy", "serverIsRunning: " + serverIsRunning);
-                if (!serverIsRunning || !AdbHelper.isRunning()) {
-                    AdbHelper.restartAdb();
-                    AdbHelper.waitForRunning(5);
-                }
+                reportStep(listener, R.string.step_pushing_server);
                 CmdStatus curStatus = startPortForward(context, ip, port, forwardport);
                 status.set(curStatus);
                 if (curStatus == CmdStatus.SUCCESS) {
+                    reportStep(listener, R.string.step_starting_server);
                     newAdbServerStart(commands);
                 }
             } catch (Exception e) {
                 e.printStackTrace();
+                status.set(CmdStatus.ERROR);
             }
         });
         int count = 0;
         while (status.get() == CmdStatus.RUNNING && count < (WAIT_TIME / 100)) {
-            Log.e("ADB", "Connecting...");
             try {
                 Thread.sleep(100);
                 count++;
@@ -84,16 +128,15 @@ public class SendCommands {
                 e.printStackTrace();
             }
         }
-        if (count >= (WAIT_TIME / 100)) {
+        if (status.get() == CmdStatus.RUNNING) {
             status.set(CmdStatus.ERROR);
-            return status.get();
         }
         if (status.get() == CmdStatus.SUCCESS) {
             count = 0;
             //  检测程序是否已经启动，如果启动了，该文件会被删除
             while (status.get() == CmdStatus.SUCCESS && count < 40) {
                 String adbTextCmd = AdbHelper.adbCmd(App.mContext,
-                        "-s", ip + ":" + port, "shell", "ls", "-alh", "/data/local/tmp/scrcpy-server.jar");
+                        "-s", serial, "shell", "ls", "-alh", "/data/local/tmp/scrcpy-server.jar");
                 if (TextUtils.isEmpty(adbTextCmd)) {
                     break;
                 } else {
@@ -109,17 +152,23 @@ public class SendCommands {
         return status.get();
     }
 
+    private static void reportStep(AdbHelper.ConnectListener listener, int res) {
+        if (listener != null) {
+            listener.onStep(res);
+        }
+    }
+
     private CmdStatus startPortForward(Context context, String ip, int port, int serverport) {
-        Log.i("Scrcpy", "try connect to ip: " + ip);
-        AdbHelper.adbCmd(App.mContext, "connect", ip + ":" + port);
+        Log.i("Scrcpy", "push server to: " + ip + ":" + port);
         // 复制server端到可执行目录（内部存储，避免外部存储不可用时连接失败）
-        String pushRet = AdbHelper.adbCmd(App.mContext, "-s", ip + ":" + port, "push",
+        String pushRet = AdbHelper.adbCmdAll(App.mContext, "-s", ip + ":" + port, "push",
                 AdbHelper.getServerJarFile(context).getAbsolutePath(), "/data/local/tmp/scrcpy-server.jar");
 
         Log.i("Scrcpy", "pushRet: " + pushRet);
 
         String adbTextCmd = AdbHelper.adbCmd(App.mContext, "-s", ip + ":" + port, "shell", "ls", "-alh", "/data/local/tmp/scrcpy-server.jar");
         if (TextUtils.isEmpty(adbTextCmd)) {
+            lastFailureStep = "push: " + (pushRet == null ? "" : pushRet.trim());
             return CmdStatus.ERROR;
         }
         // 开启本地端口 forward 转发

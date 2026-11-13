@@ -15,6 +15,15 @@
 
 ![home](home.jpg)
 
+## Easiest ways to connect
+
+The home screen has quick actions under the address field:
+
+- **Find devices** – lists phones on the same Wi-Fi that have *Wireless debugging* (Android 11+) or *ADB over Wi-Fi* enabled. Tap one to use it, no typing needed.
+- **Pair (Android 11+)** – on the target open *Developer options → Wireless debugging → Pair device with pairing code*, enter the IP:port and 6-digit code. The app pairs, finds the connection port automatically and connects.
+- **USB → Wi-Fi** – plug the target in once with a USB/OTG cable and tap it. The app enables ADB over Wi-Fi (port 5555) through USB, reads the target's IP and connects; you can then unplug the cable.
+- When a connection fails, the app explains why (not authorized, wrong port, not on the same network, …) and what to do next. Pasted text such as `adb connect 192.168.1.5:5555` is cleaned up automatically.
+
 ## Instructions to use (WiFi)
 
 - Make sure both devices are on same local network.
@@ -62,6 +71,16 @@
 
 - [scrcpy-android](https://gitlab.com/las2mile/scrcpy-android)
 - [scrcpy](https://github.com/Genymobile/scrcpy)
+
+## Building
+
+GitHub Actions (`.github/workflows/build.yml`) builds the app on every push, pull request, or manually from the *Actions* tab:
+
+- an installable **debug APK** is always uploaded as a workflow artifact;
+- a **signed release APK** is built too when the `SIGNING_KEY`, `KEY_STORE_PASSWORD`, `ALIAS` and `KEY_PASSWORD` secrets are set;
+- `libadb.so` is built from `platform-tools-34/` with NDK r26d on the first run and cached afterwards.
+
+`android.yml` remains available to publish a GitHub Release.
 
 ## Bundled adb binary
 

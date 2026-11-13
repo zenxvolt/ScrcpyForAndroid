@@ -1,0 +1,185 @@
+name: Build APK
+
+# Builds the app on every push / pull request and on demand.
+#  - Always produces an installable debug APK (signed with the debug key).
+#  - Also produces a signed release APK when the signing secrets exist
+#    (SIGNING_KEY, KEY_STORE_PASSWORD, ALIAS, KEY_PASSWORD), same secrets as android.yml.
+# libadb.so (built from platform-tools-34 with the NDK) is cached, so only the
+# first run, or a run after platform-tools-34/ changes, rebuilds it.
+
+on:
+  push:
+    branches: ['**']
+    paths-ignore:
+      - '**.md'
+      - 'fastlane/**'
+      - '*.jpg'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'fastlane/**'
+      - '*.jpg'
+  workflow_dispatch:
+    inputs:
+      build_release:
+        description: 'Also build the release APK (needs signing secrets)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NDK_VERSION: r26d
+  CMAKE_POLICY_VERSION_MINIMUM: '3.5'
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Read app version
+        id: version
+        run: |
+          VERSION_NAME=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle | head -n1)
+          VERSION_CODE=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle | head -n1)
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "App version: $VERSION_NAME ($VERSION_CODE)"
+
+      # ---------------------------------------------------------------- libadb
+      - name: Restore libadb.so cache
+        id: libadb-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/src/main/jniLibs/arm64-v8a/libadb.so
+            app/src/main/jniLibs/armeabi-v7a/libadb.so
+            app/src/main/jniLibs/x86/libadb.so
+            app/src/main/jniLibs/x86_64/libadb.so
+          key: libadb-${{ env.NDK_VERSION }}-${{ hashFiles('platform-tools-34/**') }}
+
+      - name: Free disk space (for AOSP sources)
+        if: steps.libadb-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /opt/hostedtoolcache/CodeQL || true
+          df -h /
+
+      - name: Install libadb build dependencies
+        if: steps.libadb-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build cmake patch
+
+      - name: Set up Android NDK ${{ env.NDK_VERSION }}
+        if: steps.libadb-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -L --retry 5 --retry-delay 3 -o "$RUNNER_TEMP/ndk.zip" \
+            "https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip"
+          unzip -q "$RUNNER_TEMP/ndk.zip" -d "$RUNNER_TEMP"
+          rm "$RUNNER_TEMP/ndk.zip"
+          NDK_DIR="$RUNNER_TEMP/android-ndk-${NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$NDK_DIR" >> "$GITHUB_ENV"
+
+      - name: Build libadb.so
+        if: steps.libadb-cache.outputs.cache-hit != 'true'
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:buildLibadb -PforceLibadb --stacktrace
+
+      - name: Verify libadb.so
+        run: |
+          for ABI in arm64-v8a armeabi-v7a x86 x86_64; do
+            test -s "app/src/main/jniLibs/$ABI/libadb.so" || { echo "missing libadb.so for $ABI" >&2; exit 1; }
+            ls -l "app/src/main/jniLibs/$ABI/libadb.so"
+          done
+          # Restored from cache: make sure Gradle does not try to rebuild it.
+          touch app/src/main/jniLibs/*/libadb.so
+
+      # ------------------------------------------------------------------ APK
+      - name: Build debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleScrcpyDebug -PskipLibadb --stacktrace
+
+      - name: Decode keystore
+        id: keystore
+        if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.build_release)
+        env:
+          ENCODED_STRING: ${{ secrets.SIGNING_KEY }}
+        run: |
+          if [ -n "$ENCODED_STRING" ]; then
+            echo "$ENCODED_STRING" | base64 -di > app/scrcpy.jks
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Keystore decoded."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "No SIGNING_KEY secret: skipping the release build."
+          fi
+
+      - name: Build signed release APK
+        if: steps.keystore.outputs.available == 'true'
+        env:
+          SIGNING_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew assembleScrcpyRelease -PskipLibadb --stacktrace
+
+      - name: Remove keystore
+        if: always()
+        run: rm -f app/scrcpy.jks
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScrcpyForAndroid-${{ steps.version.outputs.name }}-${{ steps.version.outputs.short_sha }}-debug
+          path: app/build/outputs/apk/scrcpy/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload release APK
+        if: steps.keystore.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScrcpyForAndroid-${{ steps.version.outputs.name }}-${{ steps.version.outputs.short_sha }}-release
+          path: app/build/outputs/apk/scrcpy/release/*.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Summary
+        if: success()
+        run: |
+          {
+            echo "## Build ${{ steps.version.outputs.name }} (${{ steps.version.outputs.code }})"
+            echo
+            echo "| APK | Size |"
+            echo "|---|---|"
+            for f in app/build/outputs/apk/scrcpy/*/*.apk; do
+              [ -f "$f" ] && echo "| $(basename "$f") | $(du -h "$f" | cut -f1) |"
+            done
+            echo
+            echo "libadb cache hit: ${{ steps.libadb-cache.outputs.cache-hit == 'true' }}"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,76 +1,88 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/adb_shell_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/theme_color"
+    android:background="?attr/colorSurface"
     android:orientation="vertical">
 
-    <FrameLayout
+    <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/adb_shell_header"
         android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:background="@color/status_bar">
+        android:layout_height="wrap_content"
+        android:fitsSystemWindows="true">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:text="@string/adb_shell_title"
-            android:textColor="@color/white"
-            android:textSize="16sp"
-            android:textStyle="bold" />
-    </FrameLayout>
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/adb_shell_toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            app:navigationContentDescription="@android:string/cancel"
+            app:navigationIcon="?attr/homeAsUpIndicator"
+            app:title="@string/adb_shell_title" />
+    </com.google.android.material.appbar.AppBarLayout>
 
-    <ScrollView
-        android:id="@+id/adb_shell_scroll"
+    <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="0dp"
+        android:layout_marginLeft="12dp"
+        android:layout_marginRight="12dp"
         android:layout_weight="1"
-        android:fillViewport="true">
+        app:cardBackgroundColor="@color/terminal_background"
+        app:cardCornerRadius="20dp"
+        app:strokeWidth="0dp">
 
-        <TextView
-            android:id="@+id/adb_shell_output"
+        <ScrollView
+            android:id="@+id/adb_shell_scroll"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:fontFamily="monospace"
-            android:padding="10dp"
-            android:textColor="@color/white"
-            android:textSize="13sp" />
-    </ScrollView>
+            android:layout_height="match_parent"
+            android:fillViewport="true">
+
+            <TextView
+                android:id="@+id/adb_shell_output"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:padding="14dp"
+                android:textColor="@color/terminal_text"
+                android:textIsSelectable="true"
+                android:textSize="13sp" />
+        </ScrollView>
+    </com.google.android.material.card.MaterialCardView>
 
     <LinearLayout
+        android:id="@+id/adb_shell_input_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/btn_color_nomal"
+        android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:padding="8dp">
+        android:padding="12dp">
 
-        <EditText
-            android:id="@+id/adb_shell_input"
+        <com.google.android.material.textfield.TextInputLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:background="@drawable/edit_background"
-            android:gravity="center_vertical"
             android:hint="@string/adb_shell_hint"
-            android:importantForAutofill="no"
-            android:inputType="textNoSuggestions"
-            android:minHeight="48dp"
-            android:paddingLeft="8dp"
-            android:paddingRight="8dp"
-            android:textColor="@color/white"
-            android:textColorHint="#A8AAB5"
-            android:textSize="14sp" />
+            app:startIconDrawable="@drawable/ic_terminal">
 
-        <Button
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/adb_shell_input"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:imeOptions="actionSend"
+                android:importantForAutofill="no"
+                android:inputType="textNoSuggestions"
+                android:maxLines="1" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/adb_shell_run"
-            android:layout_width="wrap_content"
-            android:layout_height="48dp"
-            android:layout_marginLeft="8dp"
-            android:background="@drawable/btn_selector"
-            android:minWidth="80dp"
-            android:text="@string/adb_shell_run"
-            android:textColor="@color/white"
-            android:textSize="15sp" />
+            style="@style/Widget.Material3.Button.IconButton.Filled"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginStart="8dp"
+            android:contentDescription="@string/adb_shell_run"
+            app:icon="@drawable/ic_send" />
     </LinearLayout>
 </LinearLayout>

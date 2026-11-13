@@ -1,10 +1,12 @@
 package org.client.scrcpy.utils;
 
 import android.content.Context;
+import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.Log;
 
 import org.client.scrcpy.App;
+import org.client.scrcpy.R;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -157,7 +159,7 @@ public class AdbHelper {
             return false;
         }
         String serial = host + ":" + port;
-        if (listedAsOnline(adbCmd(mContext, "devices"), serial)) {
+        if ("device".equals(parseDeviceState(adbCmd(mContext, "devices"), serial))) {
             return true;
         }
         boolean connectFinished = executeWithTimeout(() -> adbCmd(mContext, "connect", serial),
@@ -165,32 +167,182 @@ public class AdbHelper {
         if (!connectFinished) {
             return false;
         }
-        return listedAsOnline(adbCmd(mContext, "devices"), serial);
+        return "device".equals(parseDeviceState(adbCmd(mContext, "devices"), serial));
     }
 
-    private static boolean listedAsOnline(String devicesOutput, String serial) {
+    /**
+     * State of {@code serial} in {@code adb devices}: "device", "offline",
+     * "unauthorized", "authorizing", ... or null when it is not listed.
+     */
+    public static String getDeviceState(Context mContext, String serial) {
+        return parseDeviceState(adbCmd(mContext, "devices"), serial);
+    }
+
+    static String parseDeviceState(String devicesOutput, String serial) {
         if (TextUtils.isEmpty(devicesOutput) || TextUtils.isEmpty(serial)) {
-            return false;
+            return null;
         }
         String[] lines = devicesOutput.split("\\r?\\n");
         for (String line : lines) {
-            String trimmed = line.trim();
-            if (!trimmed.startsWith(serial)) {
-                continue;
-            }
-            String rest = trimmed.substring(serial.length()).trim();
-            if ("device".equals(rest) || rest.startsWith("device ") || rest.startsWith("device\t")) {
-                return true;
+            String[] parts = line.trim().split("\\s+");
+            if (parts.length >= 2 && parts[0].equals(serial)) {
+                return parts[1];
             }
         }
-        return false;
+        return null;
+    }
+
+    // ------------------------------------------------------------------
+    // Robust "adb connect" with diagnosis
+    // ------------------------------------------------------------------
+
+    /** Receives human readable progress while connecting. */
+    public interface ConnectListener {
+        void onStep(int stringRes);
+    }
+
+    public static final class ConnectResult {
+        public final boolean success;
+        public final AdbAddress.Failure failure;
+        public final String detail;
+
+        private ConnectResult(boolean success, AdbAddress.Failure failure, String detail) {
+            this.success = success;
+            this.failure = failure;
+            this.detail = detail == null ? "" : detail.trim();
+        }
+
+        static ConnectResult ok() {
+            return new ConnectResult(true, null, "");
+        }
+
+        static ConnectResult fail(AdbAddress.Failure failure, String detail) {
+            return new ConnectResult(false, failure, detail);
+        }
+    }
+
+    /** How long we wait for the user to tap "Allow" on the target device. */
+    private static final long AUTHORIZATION_WAIT_MS = 60_000;
+    /** How long a freshly connected device may stay "offline"/"connecting". */
+    private static final long SETTLE_WAIT_MS = 12_000;
+
+    /**
+     * Connect to {@code host:port} and wait until it is usable ({@code device}
+     * state). Handles the "Allow USB debugging?" prompt on the target by
+     * waiting for it instead of failing immediately, and reconnects stale
+     * offline entries.
+     */
+    public static ConnectResult connectDevice(Context ctx, String host, int port, ConnectListener listener) {
+        String serial = host + ":" + port;
+        String state = getDeviceState(ctx, serial);
+        if ("device".equals(state)) {
+            return ConnectResult.ok();
+        }
+        if (state != null) {
+            // Stale entry (offline / unauthorized from a previous attempt): start fresh.
+            adbCmd(ctx, "disconnect", serial);
+        }
+        notifyStep(listener, R.string.step_connecting);
+
+        String output = connectOnce(ctx, serial);
+        if (output == null) {
+            return ConnectResult.fail(AdbAddress.Failure.TIMEOUT, "");
+        }
+        AdbAddress.Failure failure = AdbAddress.classifyConnectOutput(output);
+        if (failure != null && failure != AdbAddress.Failure.UNAUTHORIZED) {
+            return ConnectResult.fail(failure, output);
+        }
+
+        boolean waitingForUser = failure == AdbAddress.Failure.UNAUTHORIZED;
+        if (waitingForUser) {
+            notifyStep(listener, R.string.step_waiting_authorization);
+        }
+        long start = SystemClock.elapsedRealtime();
+        int reconnects = 0;
+        while (true) {
+            state = getDeviceState(ctx, serial);
+            if ("device".equals(state)) {
+                return ConnectResult.ok();
+            }
+            if ("unauthorized".equals(state) || "authorizing".equals(state)) {
+                if (!waitingForUser) {
+                    waitingForUser = true;
+                    notifyStep(listener, R.string.step_waiting_authorization);
+                }
+            } else if (state == null && reconnects < 3) {
+                // Dropped (e.g. the prompt was dismissed or adbd restarted): try again.
+                reconnects++;
+                output = connectOnce(ctx, serial);
+                AdbAddress.Failure again = output == null
+                        ? AdbAddress.Failure.TIMEOUT : AdbAddress.classifyConnectOutput(output);
+                if (again != null && again != AdbAddress.Failure.UNAUTHORIZED) {
+                    return ConnectResult.fail(again, output);
+                }
+            }
+            long elapsed = SystemClock.elapsedRealtime() - start;
+            long limit = waitingForUser ? AUTHORIZATION_WAIT_MS : SETTLE_WAIT_MS;
+            if (elapsed > limit) {
+                if (waitingForUser) {
+                    return ConnectResult.fail(AdbAddress.Failure.UNAUTHORIZED, output);
+                }
+                return ConnectResult.fail("offline".equals(state)
+                        ? AdbAddress.Failure.OFFLINE : AdbAddress.Failure.TIMEOUT, output);
+            }
+            try {
+                Thread.sleep(600);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return ConnectResult.fail(AdbAddress.Failure.TIMEOUT, output);
+            }
+        }
+    }
+
+    /** Runs {@code adb connect}; returns its output or null when it hung. */
+    private static String connectOnce(Context ctx, String serial) {
+        final String[] out = {""};
+        boolean finished = executeWithTimeout(() -> out[0] = adbCmdAll(ctx, "connect", serial),
+                12, TimeUnit.SECONDS);
+        Log.i("Scrcpy", "adb connect " + serial + " -> " + out[0]);
+        return finished ? out[0] : null;
+    }
+
+    private static void notifyStep(ConnectListener listener, int res) {
+        if (listener != null) {
+            listener.onStep(res);
+        }
+    }
+
+    /**
+     * {@code adb pair host:port code} (Android 11+ wireless debugging).
+     *
+     * @return the adb output; success when it contains "Successfully paired".
+     */
+    public static String pair(Context ctx, String hostPort, String code) {
+        final String[] out = {""};
+        boolean finished = executeWithTimeout(() -> out[0] = adbCmdAll(ctx, "pair", hostPort, code),
+                20, TimeUnit.SECONDS);
+        Log.i("Scrcpy", "adb pair " + hostPort + " -> " + out[0]);
+        return finished ? out[0] : "timeout";
+    }
+
+    public static boolean isPairSuccess(String output) {
+        return output != null && output.toLowerCase(java.util.Locale.ROOT).contains("successfully paired");
     }
 
     public static String adbCmd(Context mContext, String... cmd) {
-        return adbCmd(mContext, true, cmd);
+        return adbCmd(mContext, true, false, cmd);
+    }
+
+    /** Like {@link #adbCmd(Context, String...)} but stderr is included in the result. */
+    public static String adbCmdAll(Context mContext, String... cmd) {
+        return adbCmd(mContext, true, true, cmd);
     }
 
     private static String adbCmd(Context mContext, boolean checkKeyFile, String... cmd) {
+        return adbCmd(mContext, checkKeyFile, false, cmd);
+    }
+
+    private static String adbCmd(Context mContext, boolean checkKeyFile, boolean includeStderr, String... cmd) {
         if (cmd == null) {
             return "";
         }
@@ -212,7 +364,7 @@ public class AdbHelper {
             genKeyFile(mContext);
         }
 
-        return ExecUtil.adbCommend(cmds, env, mContext.getFilesDir());
+        return ExecUtil.adbCommend(cmds, env, mContext.getFilesDir(), includeStderr);
     }
 
     public static void runCustomAdbCommand(Context mContext, String commandLine, ExecUtil.AdbOutputListener listener) {

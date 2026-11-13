@@ -1,7 +1,6 @@
 package org.client.scrcpy;
 
 import android.annotation.SuppressLint;
-import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.ClipData;
@@ -12,7 +11,6 @@ import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
-import android.graphics.Color;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.hardware.Sensor;
@@ -26,8 +24,6 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.SystemClock;
-import android.window.OnBackInvokedCallback;
-import android.window.OnBackInvokedDispatcher;
 import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
@@ -48,17 +44,33 @@ import android.view.WindowManager;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.CompoundButton;
+import android.widget.Filter;
+import android.widget.ImageView;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ListPopupWindow;
-import android.widget.ScrollView;
-import android.widget.Spinner;
-import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.activity.EdgeToEdge;
+import androidx.activity.OnBackPressedCallback;
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.widget.NestedScrollView;
+
+import com.google.android.material.appbar.MaterialToolbar;
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.textfield.MaterialAutoCompleteTextView;
+import com.google.android.material.textfield.TextInputLayout;
+
 import org.client.scrcpy.usb.AdbConnection;
 import org.client.scrcpy.usb.UsbAdb;
+import org.client.scrcpy.utils.AdbAddress;
 import org.client.scrcpy.utils.AdbHelper;
 import org.client.scrcpy.utils.PreUtils;
 import org.client.scrcpy.utils.Progress;
@@ -76,7 +88,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 
-public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, SensorEventListener {
+public class MainActivity extends AppCompatActivity implements Scrcpy.ServiceCallbacks, SensorEventListener {
 
     // 是否直接连接远程
     public final static String START_REMOTE = "start_remote_headless";
@@ -105,26 +117,36 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
     private SurfaceHolder.Callback surfaceCallback;
     private Scrcpy scrcpy;
     private long timestamp = 0;
-    private OnBackInvokedCallback backInvokedCallback;
 
     private LinearLayout linearLayout;
 
 // USB ADB support
-    private static final String ACTION_USB_PERMISSION = "org.client.scrcpy.USB_PERMISSION";
+    // Distinct from AdbShellActivity's action so the two screens never react to
+    // each other's USB permission results.
+    private static final String ACTION_USB_PERMISSION = "org.client.scrcpy.USB_PERMISSION_MAIN";
 
     private UsbManager usbManager;
     private UsbAdb usbAdb;
 
+    /** What to do once the user grants USB permission. */
+    private enum UsbAction {MIRROR, ENABLE_WIFI}
+
+    private UsbAction pendingUsbAction = UsbAction.MIRROR;
+
     private final BroadcastReceiver usbPermissionReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            if (!ACTION_USB_PERMISSION.equals(intent.getAction())) {
+            if (!ACTION_USB_PERMISSION.equals(intent.getAction()) || isFinishing()) {
                 return;
             }
             UsbDevice device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
             boolean granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false);
             if (granted && device != null) {
-                startUsbConnect(device);
+                if (pendingUsbAction == UsbAction.ENABLE_WIFI) {
+                    startUsbToWifi(device);
+                } else {
+                    startUsbConnect(device);
+                }
             } else {
                 Progress.closeDialog();
                 Toast.makeText(MainActivity.this, R.string.usb_permission_denied,
@@ -169,7 +191,7 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
                             if (serviceBound) {
                                 showMainView();
                             }
-                            Toast.makeText(context, "Connection Timed out 2", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(context, R.string.connect_error_stream_timeout, Toast.LENGTH_LONG).show();
                         } else {
                             first_time = false;
                             applyClientOrientationFromRemote();
@@ -236,9 +258,11 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
     @SuppressLint("SourceLockedOrientationActivity")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        EdgeToEdge.enable(this);
         super.onCreate(savedInstanceState);
         this.context = this;
         usbManager = (UsbManager) getSystemService(Context.USB_SERVICE);
+        registerUsbPermissionReceiver();
         setTitle(getString(R.string.app_name));
         if (savedInstanceState != null) {
             first_time = savedInstanceState.getBoolean("first_time");
@@ -281,11 +305,12 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
                 scrollView.setVisibility(View.INVISIBLE);
             }
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            backInvokedCallback = this::handleBackPressed;
-            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
-                    OnBackInvokedDispatcher.PRIORITY_DEFAULT, backInvokedCallback);
-        }
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                handleBackPressed();
+            }
+        });
     }
 
     @Override
@@ -304,46 +329,37 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
 
     @SuppressLint("SourceLockedOrientationActivity")
     public void scrcpy_main() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            this.getWindow().setStatusBarColor(getColor(R.color.status_bar));
-        } else {
-            this.getWindow().setStatusBarColor(getResources().getColor(R.color.status_bar));
-        }
+        // Leave the immersive mirror mode and go back to edge-to-edge with visible bars.
         final View decorView = getWindow().getDecorView();
-        decorView.setSystemUiVisibility(View.VISIBLE);
+        decorView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+        EdgeToEdge.enable(this);
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         landscape = false;  // 将模式重新置为 竖屏，模式不正确将导致连接黑屏
         setContentView(R.layout.activity_main);
-        Util.applyStatusBarInset(findViewById(R.id.app_header), 80,
-                findViewById(R.id.main_scroll_view));
 
+        // Bottom / side system bar insets for the scrolling content.
+        View content = findViewById(R.id.main_content);
+        final int padLeft = content.getPaddingLeft();
+        final int padRight = content.getPaddingRight();
+        final int padBottom = content.getPaddingBottom();
+        ViewCompat.setOnApplyWindowInsetsListener(content, (v, insets) -> {
+            Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars()
+                    | WindowInsetsCompat.Type.displayCutout());
+            v.setPadding(padLeft + bars.left, v.getPaddingTop(), padRight + bars.right, padBottom + bars.bottom);
+            return insets;
+        });
+
+        setupToolbar();
 
         // find view by id
-        ScrollView scrollView = findViewById(R.id.main_scroll_view);
+        NestedScrollView scrollView = findViewById(R.id.main_scroll_view);
         Button startButton = findViewById(R.id.button_start);
-        TextView btnMoreSettings = findViewById(R.id.btn_more_settings);
-        LinearLayout layoutMoreSettings = findViewById(R.id.layout_more_settings);
+        MaterialButton btnMoreSettings = findViewById(R.id.btn_more_settings);
+        View layoutMoreSettings = findViewById(R.id.layout_more_settings);
 
         sendCommands = new SendCommands();
 
-        startButton.setOnClickListener(v -> {
-            stopStatusMonitor();
-            // 启动连接前先释放上一次的 USB/scrcpy 会话（停止服务、关闭 usbAdb、
-            // 释放 7008 与 USB 设备），避免横屏/反复连接后授权丢失或 openDevice 失败
-            cleanupUsbSessionForShell();
-            getAttributes();
-            SessionLog.i("Start clicked host=" + serverAdr
-                    + " max=" + Math.max(screenHeight, screenWidth)
-                    + " bitrate=" + videoBitrate
-                    + " codec=" + videoCodec
-                    + " encoder=" + videoEncoder
-                    + " fps=" + videoFrameRate);
-            if (UsbShellCompat.isUsbSelection(serverAdr)) {
-                connectViaUsb();
-            } else {
-                connectScrcpyServer(serverAdr);
-            }
-        });
+        startButton.setOnClickListener(v -> onStartClicked());
         Button rebootButton = findViewById(R.id.button_reboot);
         if (rebootButton != null) {
             rebootButton.setOnClickListener(v -> confirmRebootRemoteDevice());
@@ -361,11 +377,7 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
             adbTerminalButton.setOnClickListener(v -> {
                 EditText hostEdit = findViewById(R.id.editText_server_host);
                 String currentHost = hostEdit == null ? "" : hostEdit.getText().toString().trim();
-                AdbTerminalDialog dialog = new AdbTerminalDialog(this, currentHost, ipWithPort -> {
-                    if (hostEdit != null && !TextUtils.isEmpty(ipWithPort)) {
-                        hostEdit.setText(ipWithPort);
-                    }
-                });
+                AdbTerminalDialog dialog = new AdbTerminalDialog(this, currentHost, this::applyTarget);
                 dialog.show();
             });
         }
@@ -398,14 +410,30 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
             }
         });
 
+        // Connection helpers
+        findViewById(R.id.chip_discover).setOnClickListener(v ->
+                ConnectAssistant.showDiscoverDialog(this, this::applyTarget));
+        findViewById(R.id.chip_pair).setOnClickListener(v ->
+                ConnectAssistant.showPairDialog(this, null, this::applyTarget));
+        findViewById(R.id.chip_usb_to_wifi).setOnClickListener(v -> enableWifiDebuggingOverUsb());
+        findViewById(R.id.chip_help).setOnClickListener(v -> ConnectAssistant.showHowToDialog(this));
+
         get_saved_preferences();
 
         EditText editText = findViewById(R.id.editText_server_host);
+        TextInputLayout hostLayout = findViewById(R.id.layout_server_host);
 
-        findViewById(R.id.history_list).setOnClickListener(v -> {
+        hostLayout.setEndIconOnClickListener(v -> {
             Log.i("Scrcpy", "focus true");
             editText.clearFocus();
             showListPopulWindow(editText);
+        });
+        editText.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_GO) {
+                onStartClicked();
+                return true;
+            }
+            return false;
         });
 
         editText.setOnFocusChangeListener((v, hasFocus) -> {
@@ -420,6 +448,7 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
 
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
+                hostLayout.setError(null);
             }
 
             @Override
@@ -440,6 +469,105 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
         }
     }
 
+    private void setupToolbar() {
+        MaterialToolbar toolbar = findViewById(R.id.app_toolbar);
+        if (toolbar == null) {
+            return;
+        }
+        toolbar.setSubtitle("v" + BuildConfig.VERSION_NAME);
+        toolbar.setOnMenuItemClickListener(item -> {
+            int id = item.getItemId();
+            if (id == R.id.menu_discover) {
+                ConnectAssistant.showDiscoverDialog(this, this::applyTarget);
+                return true;
+            } else if (id == R.id.menu_share_log) {
+                shareSessionLog();
+                return true;
+            } else if (id == R.id.menu_reboot) {
+                confirmRebootRemoteDevice();
+                return true;
+            } else if (id == R.id.menu_power_off) {
+                confirmPowerOffRemoteDevice();
+                return true;
+            }
+            return false;
+        });
+    }
+
+    /** Put a (normalised) address in the target field and refresh the status pill. */
+    private void applyTarget(String address) {
+        if (TextUtils.isEmpty(address)) {
+            return;
+        }
+        EditText hostEdit = findViewById(R.id.editText_server_host);
+        if (hostEdit == null) {
+            return;
+        }
+        hostEdit.setText(address);
+        hostEdit.setSelection(hostEdit.getText().length());
+        if (!UsbShellCompat.isUsbSelection(address)) {
+            PreUtils.put(context, Constant.CONTROL_REMOTE_ADDR, address);
+            saveHistory(address);
+        }
+        if (statusMonitorActive) {
+            scheduleStatusCheck(0);
+        } else {
+            startStatusMonitor();
+        }
+        updateResolutionPreview();
+    }
+
+    /**
+     * Validates the target, normalises what the user typed (e.g. a pasted
+     * "adb connect 192.168.1.5:5555") and starts the connection.
+     */
+    private void onStartClicked() {
+        EditText hostEdit = findViewById(R.id.editText_server_host);
+        TextInputLayout hostLayout = findViewById(R.id.layout_server_host);
+        String raw = hostEdit == null ? "" : hostEdit.getText().toString().trim();
+        if (!UsbShellCompat.isUsbSelection(raw)) {
+            if (TextUtils.isEmpty(raw)) {
+                // Nothing typed: a plugged-in USB device is the obvious choice.
+                String usbLabel = getUsbAdbDeviceLabel();
+                if (usbLabel != null && hostEdit != null) {
+                    hostEdit.setText(usbLabel);
+                } else {
+                    if (hostLayout != null) {
+                        hostLayout.setError(getString(R.string.error_address_empty));
+                    }
+                    return;
+                }
+            } else {
+                String normalized = AdbAddress.normalize(raw);
+                if (normalized == null) {
+                    if (hostLayout != null) {
+                        hostLayout.setError(getString(R.string.error_address_invalid));
+                    }
+                    return;
+                }
+                if (!normalized.equals(raw) && hostEdit != null) {
+                    hostEdit.setText(normalized);
+                }
+            }
+        }
+        stopStatusMonitor();
+        // 启动连接前先释放上一次的 USB/scrcpy 会话（停止服务、关闭 usbAdb、
+        // 释放 7008 与 USB 设备），避免横屏/反复连接后授权丢失或 openDevice 失败
+        cleanupUsbSessionForShell();
+        getAttributes();
+        SessionLog.i("Start clicked host=" + serverAdr
+                + " max=" + Math.max(screenHeight, screenWidth)
+                + " bitrate=" + videoBitrate
+                + " codec=" + videoCodec
+                + " encoder=" + videoEncoder
+                + " fps=" + videoFrameRate);
+        if (UsbShellCompat.isUsbSelection(serverAdr)) {
+            connectViaUsb();
+        } else {
+            connectScrcpyServer(serverAdr);
+        }
+    }
+
     private void showListPopulWindow(EditText mEditText) {
         String[] history = getHistoryList();//要填充的数据
         if (history.length == 0) {  // 如果list为空，则使用本机填充一个
@@ -456,15 +584,19 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
         listPopupWindow = new ListPopupWindow(this);
         // 自定义列表项：设备名 + 右侧删除按钮
         ArrayAdapter<String> adapter = new ArrayAdapter<String>(this, R.layout.item_history_device, R.id.text_device, items) {
+            @NonNull
             @Override
-            public View getView(int position, View convertView, ViewGroup parent) {
+            public View getView(int position, View convertView, @NonNull ViewGroup parent) {
                 View view = super.getView(position, convertView, parent);
                 View deleteButton = view.findViewById(R.id.button_delete);
+                ImageView icon = view.findViewById(R.id.icon_device);
                 if (position == 0) {
                     // USB 连接入口不允许删除
                     deleteButton.setVisibility(View.GONE);
+                    icon.setImageResource(R.drawable.ic_usb);
                 } else {
                     deleteButton.setVisibility(View.VISIBLE);
+                    icon.setImageResource(R.drawable.ic_history);
                     final String device = getItem(position);
                     deleteButton.setOnClickListener(v -> {
                         removeHistory(device);
@@ -476,7 +608,9 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
             }
         };
         listPopupWindow.setAdapter(adapter);
-        listPopupWindow.setAnchorView(mEditText);//以哪个控件为基准，在该处以mEditText为基准
+        View anchor = findViewById(R.id.layout_server_host);
+        listPopupWindow.setAnchorView(anchor != null ? anchor : mEditText);//以哪个控件为基准
+        listPopupWindow.setBackgroundDrawable(getDrawable(R.drawable.bg_popup));
         listPopupWindow.setModal(true);
         listPopupWindow.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
 
@@ -558,9 +692,9 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
 
     public void get_saved_preferences() {
         EditText editTextServerHost = findViewById(R.id.editText_server_host);
-        Switch aSwitch0 = findViewById(R.id.switch0);
-        Switch aSwitch1 = findViewById(R.id.switch1);
-        Switch audioForwardSwitch = findViewById(R.id.switch_audio_enable);
+        CompoundButton aSwitch0 = findViewById(R.id.switch0);
+        CompoundButton aSwitch1 = findViewById(R.id.switch1);
+        CompoundButton audioForwardSwitch = findViewById(R.id.switch_audio_enable);
         String historySpServerAdr = PreUtils.get(context, Constant.CONTROL_REMOTE_ADDR, "");
         if (TextUtils.isEmpty(historySpServerAdr)) {
             String[] historyList = getHistoryList();
@@ -579,32 +713,20 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
         aSwitch1.setChecked(PreUtils.get(context, Constant.CONTROL_NAV, false));
         audioForwardSwitch.setChecked(PreUtils.get(context, Constant.AUDIO_FORWARD, true));
 
-        setSpinner(R.array.options_bitrate_keys, R.id.spinner_video_bitrate, Constant.PREFERENCE_SPINNER_BITRATE);
-        setSpinner(R.array.options_codec_keys, R.id.spinner_video_codec, Constant.PREFERENCE_SPINNER_CODEC);
-        setSpinner(R.array.options_fps_keys, R.id.spinner_video_fps, Constant.PREFERENCE_SPINNER_FPS);
-        setSpinner(R.array.options_delay_keys, R.id.delay_control_spinner, Constant.PREFERENCE_SPINNER_DELAY);
-        setupResolutionSpinner();
+        setupDropdown(R.array.options_bitrate_keys, R.id.spinner_video_bitrate, Constant.PREFERENCE_SPINNER_BITRATE, null);
+        setupDropdown(R.array.options_codec_keys, R.id.spinner_video_codec, Constant.PREFERENCE_SPINNER_CODEC, null);
+        setupDropdown(R.array.options_fps_keys, R.id.spinner_video_fps, Constant.PREFERENCE_SPINNER_FPS, null);
+        setupDropdown(R.array.options_delay_keys, R.id.delay_control_spinner, Constant.PREFERENCE_SPINNER_DELAY, null);
+        setupDropdown(R.array.options_resolution_keys, R.id.spinner_video_resolution,
+                Constant.PREFERENCE_SPINNER_RESOLUTION, this::updateResolutionPreview);
+        updateResolutionPreview();
 
         EditText encoderEdit = findViewById(R.id.editText_video_encoder);
         encoderEdit.setText(PreUtils.get(context, Constant.PREFERENCE_VIDEO_ENCODER, ""));
 
-        if (aSwitch0.isChecked()) {
-            aSwitch1.setClickable(false);
-            aSwitch1.setTextColor(Color.GRAY);
-            // aSwitch1.setVisibility(View.GONE);
-        }
-
-        aSwitch0.setOnClickListener(v -> {
-            if (aSwitch0.isChecked()) {
-                aSwitch1.setClickable(false);
-                aSwitch1.setTextColor(Color.GRAY);
-                // aSwitch1.setVisibility(View.GONE);
-            } else {
-                aSwitch1.setClickable(true);
-                aSwitch1.setTextColor(Color.WHITE);
-                // aSwitch1.setVisibility(View.VISIBLE);
-            }
-        });
+        // The navigation bar only makes sense when control is enabled.
+        aSwitch1.setEnabled(!aSwitch0.isChecked());
+        aSwitch0.setOnCheckedChangeListener((buttonView, isChecked) -> aSwitch1.setEnabled(!isChecked));
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -680,67 +802,74 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
         }
     }
 
-    private void setSpinner(final int textArrayOptionResId, final int textViewResId, final String preferenceId) {
-
-        final Spinner spinner = findViewById(textViewResId);
-        ArrayAdapter<CharSequence> arrayAdapter = ArrayAdapter.createFromResource(this, textArrayOptionResId, android.R.layout.simple_spinner_item);
-        arrayAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        spinner.setAdapter(arrayAdapter);
-        spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                PreUtils.put(context, preferenceId, position);
-            }
-
-            @Override
-            public void onNothingSelected(AdapterView<?> parent) {
-                PreUtils.put(context, preferenceId, 0);
+    /**
+     * Material exposed dropdown (replacement for Spinner). The selected index
+     * is persisted under {@code preferenceId}.
+     */
+    private void setupDropdown(final int textArrayOptionResId, final int viewResId, final String preferenceId,
+                               Runnable onChanged) {
+        final MaterialAutoCompleteTextView dropdown = findViewById(viewResId);
+        final String[] items = getResources().getStringArray(textArrayOptionResId);
+        dropdown.setAdapter(new NoFilterArrayAdapter(this, items));
+        int selection = getDropdownIndex(preferenceId, textArrayOptionResId);
+        dropdown.setText(items[selection], false);
+        dropdown.setOnItemClickListener((parent, view, position, id) -> {
+            PreUtils.put(context, preferenceId, position);
+            if (onChanged != null) {
+                onChanged.run();
             }
         });
-        int selection = PreUtils.get(context, preferenceId, 0);
-        if (selection < arrayAdapter.getCount()) {
-            spinner.setSelection(selection);
-        } else {
-            spinner.setSelection(0);
-        }
     }
 
-    private void setupResolutionSpinner() {
-        final Spinner spinner = findViewById(R.id.spinner_video_resolution);
-        spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                PreUtils.put(context, Constant.PREFERENCE_SPINNER_RESOLUTION, position);
-                updateResolutionPreview();
-            }
+    /** Persisted dropdown index, clamped to the option array. */
+    private int getDropdownIndex(String preferenceId, int textArrayOptionResId) {
+        int count = getResources().getStringArray(textArrayOptionResId).length;
+        int selection = PreUtils.get(context, preferenceId, 0);
+        return (selection >= 0 && selection < count) ? selection : 0;
+    }
 
-            @Override
-            public void onNothingSelected(AdapterView<?> parent) {
-                PreUtils.put(context, Constant.PREFERENCE_SPINNER_RESOLUTION, 0);
-            }
-        });
-        int selection = PreUtils.get(context, Constant.PREFERENCE_SPINNER_RESOLUTION, 0);
-        if (selection < spinner.getCount()) {
-            spinner.setSelection(selection);
-        } else {
-            spinner.setSelection(0);
+    /** ArrayAdapter that never filters, so the dropdown always shows every option. */
+    private static final class NoFilterArrayAdapter extends ArrayAdapter<String> {
+        private final String[] items;
+
+        NoFilterArrayAdapter(Context context, String[] items) {
+            super(context, R.layout.item_dropdown, items);
+            this.items = items;
         }
-        updateResolutionPreview();
+
+        @NonNull
+        @Override
+        public Filter getFilter() {
+            return new Filter() {
+                @Override
+                protected FilterResults performFiltering(CharSequence constraint) {
+                    FilterResults results = new FilterResults();
+                    results.values = items;
+                    results.count = items.length;
+                    return results;
+                }
+
+                @Override
+                protected void publishResults(CharSequence constraint, FilterResults results) {
+                    notifyDataSetChanged();
+                }
+            };
+        }
     }
 
     private void updateResolutionPreview() {
         TextView info = findViewById(R.id.text_resolution_info);
-        Spinner spinner = findViewById(R.id.spinner_video_resolution);
-        if (info == null || spinner == null) {
+        if (info == null) {
             return;
         }
-        if (spinner.getSelectedItemPosition() != Constant.RESOLUTION_AUTO_INDEX) {
+        if (getDropdownIndex(Constant.PREFERENCE_SPINNER_RESOLUTION, R.array.options_resolution_keys)
+                != Constant.RESOLUTION_AUTO_INDEX) {
             info.setVisibility(View.GONE);
             return;
         }
         EditText editText = findViewById(R.id.editText_server_host);
         String remoteAdr = editText != null ? editText.getText().toString().trim() : "";
-        if (TextUtils.isEmpty(remoteAdr)) {
+        if (TextUtils.isEmpty(remoteAdr) || UsbShellCompat.isUsbSelection(remoteAdr)) {
             info.setText(R.string.resolution_auto_need_ip);
             info.setVisibility(View.VISIBLE);
             return;
@@ -815,22 +944,22 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
         if (!TextUtils.isEmpty(serverAdr) && !UsbShellCompat.isUsbSelection(serverAdr)) {
             PreUtils.put(context, Constant.CONTROL_REMOTE_ADDR, serverAdr);
         }
-        final Spinner videoResolutionSpinner = findViewById(R.id.spinner_video_resolution);
-        final Spinner videoBitrateSpinner = findViewById(R.id.spinner_video_bitrate);
-        final Spinner videoCodecSpinner = findViewById(R.id.spinner_video_codec);
-        final Spinner videoFpsSpinner = findViewById(R.id.spinner_video_fps);
-        final Spinner delayControlSpinner = findViewById(R.id.delay_control_spinner);
+        final int resolutionIndex = getDropdownIndex(Constant.PREFERENCE_SPINNER_RESOLUTION, R.array.options_resolution_keys);
+        final int bitrateIndex = getDropdownIndex(Constant.PREFERENCE_SPINNER_BITRATE, R.array.options_bitrate_keys);
+        final int codecIndex = getDropdownIndex(Constant.PREFERENCE_SPINNER_CODEC, R.array.options_codec_keys);
+        final int fpsIndex = getDropdownIndex(Constant.PREFERENCE_SPINNER_FPS, R.array.options_fps_keys);
+        final int delayIndex = getDropdownIndex(Constant.PREFERENCE_SPINNER_DELAY, R.array.options_delay_keys);
         final EditText encoderEdit = findViewById(R.id.editText_video_encoder);
 
-        Switch a_Switch0 = findViewById(R.id.switch0);
-        Switch a_Switch1 = findViewById(R.id.switch1);
-        Switch audioEnableSwitch = findViewById(R.id.switch_audio_enable);
+        CompoundButton a_Switch0 = findViewById(R.id.switch0);
+        CompoundButton a_Switch1 = findViewById(R.id.switch1);
+        CompoundButton audioEnableSwitch = findViewById(R.id.switch_audio_enable);
         PreUtils.put(context, Constant.CONTROL_NO, a_Switch0.isChecked());
         PreUtils.put(context, Constant.CONTROL_NAV, a_Switch1.isChecked());
         PreUtils.put(context, Constant.AUDIO_FORWARD, audioEnableSwitch.isChecked());
 
-        String resolutionValue = getResources().getStringArray(R.array.options_resolution_values)[videoResolutionSpinner.getSelectedItemPosition()];
-        autoResolutionEnabled = videoResolutionSpinner.getSelectedItemPosition() == Constant.RESOLUTION_AUTO_INDEX
+        String resolutionValue = getResources().getStringArray(R.array.options_resolution_values)[resolutionIndex];
+        autoResolutionEnabled = resolutionIndex == Constant.RESOLUTION_AUTO_INDEX
                 || "0".equals(resolutionValue) || "auto".equalsIgnoreCase(resolutionValue);
         resolutionLimitSource = null;
         if (autoResolutionEnabled) {
@@ -845,10 +974,10 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
             screenHeight = maxSize;
             screenWidth = maxSize;
         }
-        videoBitrate = getResources().getIntArray(R.array.options_bitrate_values)[videoBitrateSpinner.getSelectedItemPosition()];
-        videoCodec = getResources().getStringArray(R.array.options_codec_values)[videoCodecSpinner.getSelectedItemPosition()];
-        videoFrameRate = getResources().getIntArray(R.array.options_fps_values)[videoFpsSpinner.getSelectedItemPosition()];
-        delayControl = getResources().getIntArray(R.array.options_delay_values)[delayControlSpinner.getSelectedItemPosition()];
+        videoBitrate = getResources().getIntArray(R.array.options_bitrate_values)[bitrateIndex];
+        videoCodec = getResources().getStringArray(R.array.options_codec_values)[codecIndex];
+        videoFrameRate = getResources().getIntArray(R.array.options_fps_values)[fpsIndex];
+        delayControl = getResources().getIntArray(R.array.options_delay_values)[delayIndex];
         videoEncoder = encoderEdit.getText() == null ? "" : encoderEdit.getText().toString().trim();
         PreUtils.put(context, Constant.PREFERENCE_VIDEO_ENCODER, videoEncoder);
     }
@@ -1097,10 +1226,6 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
 
     @Override
     protected void onDestroy() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && backInvokedCallback != null) {
-            getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backInvokedCallback);
-            backInvokedCallback = null;
-        }
         super.onDestroy();
         if (usbAdb != null) {
             usbAdb.close();
@@ -1139,12 +1264,6 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
     protected void onPause() {
         super.onPause();
         Log.d("Scrcpy", "onPause: " + serviceBound);
-        try {
-            // 页面不在前台时注销 USB 授权广播，避免 AdbShellActivity 的授权
-            // 请求结果被本页面也接收，导致 scrcpy 与 adb 命令行同时启动
-            unregisterReceiver(usbPermissionReceiver);
-        } catch (Exception ignored) {
-        }
         if (first_time) {
             stopStatusMonitor();
         }
@@ -1154,10 +1273,14 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
         }
     }
 
+    /**
+     * Registered for the whole lifetime of the activity: the system USB
+     * permission dialog pauses this activity, and the result broadcast is sent
+     * while we are paused. Unregistering in onPause (as before) lost the result,
+     * so users had to press "Start" twice.
+     */
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
-    @Override
-    protected void onResume() {
-        super.onResume();
+    private void registerUsbPermissionReceiver() {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 registerReceiver(usbPermissionReceiver, new IntentFilter(ACTION_USB_PERMISSION),
@@ -1167,6 +1290,11 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
             }
         } catch (Exception ignored) {
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
         if (first_time) {
             startStatusMonitor();
         }
@@ -1197,17 +1325,11 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
         result_of_Rotation = false;
     }
 
-    @SuppressLint("GestureBackNavigation")
-    @Override
-    public void onBackPressed() {
-        handleBackPressed();
-    }
-
     private void handleBackPressed() {
         if (timestamp == 0) {
             if (serviceBound) {
                 timestamp = SystemClock.uptimeMillis();
-                Toast.makeText(context, "Press again to exit", Toast.LENGTH_SHORT).show();
+                Toast.makeText(context, R.string.press_again_to_exit, Toast.LENGTH_SHORT).show();
             } else {
                 finish();
             }
@@ -1252,7 +1374,7 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
     private void confirmRebootRemoteDevice() {
         getAttributes();
         if (TextUtils.isEmpty(serverAdr)) {
-            Toast.makeText(context, "Server Address Empty", Toast.LENGTH_SHORT).show();
+            Toast.makeText(context, R.string.error_address_empty, Toast.LENGTH_SHORT).show();
             return;
         }
         String[] serverInfo = Util.getServerHostAndPort(serverAdr);
@@ -1285,7 +1407,7 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
     private void confirmPowerOffRemoteDevice() {
         getAttributes();
         if (TextUtils.isEmpty(serverAdr)) {
-            Toast.makeText(context, "Server Address Empty", Toast.LENGTH_SHORT).show();
+            Toast.makeText(context, R.string.error_address_empty, Toast.LENGTH_SHORT).show();
             return;
         }
         String[] serverInfo = Util.getServerHostAndPort(serverAdr);
@@ -1315,7 +1437,9 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
         });
     }
 
-    private void connectScrcpyServer(String serverAdr) {
+    private void connectScrcpyServer(String rawServerAdr) {
+        String normalized = AdbAddress.normalize(rawServerAdr);
+        final String serverAdr = normalized != null ? normalized : rawServerAdr;
         if (!TextUtils.isEmpty(serverAdr)) {
             saveHistory(serverAdr);  // 保存到历史记录
             String[] serverInfo = Util.getServerHostAndPort(serverAdr);
@@ -1347,7 +1471,8 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
                 SendCommands.CmdStatus sendStatus = sendCommands.SendAdbCommands(context, serverHost,
                         serverPort,
                         localForwardPort,
-                        options);
+                        options,
+                        step -> Progress.updateMessage(getString(step)));
                 if (sendStatus == SendCommands.CmdStatus.SUCCESS) {
                     ThreadUtils.post(() -> {
                         if (!MainActivity.this.isFinishing()) {
@@ -1357,16 +1482,24 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
                         }
                     });
                 } else {
+                    final AdbHelper.ConnectResult failure = sendCommands.getLastFailure();
+                    final String failedStep = sendCommands.getLastFailureStep();
+                    SessionLog.i("Connect failed " + serverAdr
+                            + " reason=" + (failure == null ? "server" : failure.failure)
+                            + " detail=" + (failure == null ? failedStep : failure.detail));
                     ThreadUtils.post(() -> {
                         Progress.closeDialog();
-                        Toast.makeText(context, "Network OR ADB connection failed", Toast.LENGTH_SHORT).show();
                         startStatusMonitor();
                         connectExitExt();
+                        if (!headlessMode && !MainActivity.this.isFinishing()) {
+                            ConnectAssistant.showConnectFailure(MainActivity.this, failure, failedStep,
+                                    serverAdr, MainActivity.this::onStartClicked, MainActivity.this::applyTarget);
+                        }
                     });
                 }
             });
         } else {
-            Toast.makeText(context, "Server Address Empty", Toast.LENGTH_SHORT).show();
+            Toast.makeText(context, R.string.error_address_empty, Toast.LENGTH_SHORT).show();
             startStatusMonitor();
             connectExitExt();
         }
@@ -1480,7 +1613,12 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
         if (led == null) {
             return;
         }
-        int color = getResources().getColor(online ? R.color.status_online : R.color.status_offline);
+        int color = getColor(online ? R.color.status_online : R.color.status_offline);
+        View pill = findViewById(R.id.status_pill);
+        if (pill != null && pill.getBackground() instanceof GradientDrawable) {
+            ((GradientDrawable) pill.getBackground().mutate()).setColor(getColor(
+                    online ? R.color.status_online_container : R.color.status_offline_container));
+        }
         Drawable background = led.getBackground();
         if (background instanceof GradientDrawable) {
             ((GradientDrawable) background.mutate()).setColor(color);
@@ -1543,12 +1681,133 @@ public class MainActivity extends Activity implements Scrcpy.ServiceCallbacks, S
         if (usbManager.hasPermission(device)) {
             startUsbConnect(device);
         } else {
-            int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-                    ? PendingIntent.FLAG_MUTABLE : 0;
-            PendingIntent permissionIntent = PendingIntent.getBroadcast(this, 0,
-                    new Intent(ACTION_USB_PERMISSION), flags);
-            usbManager.requestPermission(device, permissionIntent);
+            requestUsbPermission(device, UsbAction.MIRROR);
         }
+    }
+
+    private void requestUsbPermission(UsbDevice device, UsbAction action) {
+        pendingUsbAction = action;
+        int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                ? PendingIntent.FLAG_MUTABLE : 0;
+        // The intent must be explicit: a mutable PendingIntent wrapping an implicit
+        // intent throws IllegalArgumentException on Android 14+ (targetSdk >= 34),
+        // which made USB connections fail before the permission prompt appeared.
+        Intent intent = new Intent(ACTION_USB_PERMISSION).setPackage(getPackageName());
+        PendingIntent permissionIntent = PendingIntent.getBroadcast(this, action.ordinal(), intent, flags);
+        usbManager.requestPermission(device, permissionIntent);
+    }
+
+    // ------------------------------------------------------------------
+    // USB -> Wi-Fi: enable "adb tcpip 5555" over USB, then connect by IP
+    // ------------------------------------------------------------------
+
+    private void enableWifiDebuggingOverUsb() {
+        if (usbManager == null) {
+            usbManager = (UsbManager) getSystemService(Context.USB_SERVICE);
+        }
+        UsbDevice device = UsbAdb.findAdbDevice(usbManager);
+        if (device == null) {
+            new MaterialAlertDialogBuilder(this)
+                    .setTitle(R.string.action_usb_to_wifi)
+                    .setIcon(R.drawable.ic_usb)
+                    .setMessage(R.string.usb_to_wifi_explain)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+            return;
+        }
+        if (AdbConnection.findAdbInterface(device) == null) {
+            Toast.makeText(context, R.string.usb_no_adb_interface, Toast.LENGTH_LONG).show();
+            return;
+        }
+        // The USB device must not be held by a mirroring session.
+        cleanupUsbSessionForShell();
+        if (usbManager.hasPermission(device)) {
+            startUsbToWifi(device);
+        } else {
+            requestUsbPermission(device, UsbAction.ENABLE_WIFI);
+        }
+    }
+
+    private void startUsbToWifi(UsbDevice device) {
+        pendingUsbAction = UsbAction.MIRROR;
+        stopStatusMonitor();
+        Progress.showDialog(MainActivity.this, getString(R.string.action_usb_to_wifi),
+                getString(R.string.usb_to_wifi_step_usb));
+        ThreadUtils.workPost(() -> {
+            String error = null;
+            String address = null;
+            UsbAdb adb = null;
+            try {
+                adb = UsbAdb.connect(context, usbManager, device);
+                Progress.updateMessage(getString(R.string.usb_to_wifi_step_ip));
+                String ip = adb.findWifiIpAddress();
+                if (ip == null) {
+                    error = getString(R.string.usb_to_wifi_no_wifi);
+                } else {
+                    Progress.updateMessage(getString(R.string.usb_to_wifi_step_tcpip));
+                    String reply = adb.enableTcpip(AdbAddress.DEFAULT_PORT);
+                    SessionLog.i("USB tcpip reply: " + reply + " ip=" + ip);
+                    address = ip + ":" + AdbAddress.DEFAULT_PORT;
+                }
+            } catch (Exception e) {
+                Log.e("Scrcpy", "USB -> Wi-Fi failed", e);
+                error = e.getMessage();
+            } finally {
+                if (adb != null) {
+                    try {
+                        adb.close();
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+
+            AdbHelper.ConnectResult result = null;
+            if (address != null) {
+                // adbd restarts in TCP mode; give it a moment before connecting.
+                Progress.updateMessage(getString(R.string.usb_to_wifi_step_connect, address));
+                SystemClock.sleep(2000);
+                String host = AdbAddress.host(address);
+                result = AdbHelper.connectDevice(context, host, AdbAddress.DEFAULT_PORT,
+                        step -> Progress.updateMessage(getString(step)));
+                if (!result.success) {
+                    // One more try: some devices need a little longer to restart adbd.
+                    SystemClock.sleep(2500);
+                    result = AdbHelper.connectDevice(context, host, AdbAddress.DEFAULT_PORT,
+                            step -> Progress.updateMessage(getString(step)));
+                }
+            }
+            final String finalError = error;
+            final String finalAddress = address;
+            final AdbHelper.ConnectResult finalResult = result;
+            ThreadUtils.post(() -> {
+                Progress.closeDialog();
+                if (isFinishing()) {
+                    return;
+                }
+                if (finalAddress != null) {
+                    applyTarget(finalAddress);
+                }
+                if (finalError != null) {
+                    new MaterialAlertDialogBuilder(this)
+                            .setTitle(R.string.usb_to_wifi_failed_title)
+                            .setMessage(getString(R.string.usb_to_wifi_failed, finalError))
+                            .setPositiveButton(android.R.string.ok, null)
+                            .show();
+                } else if (finalResult != null && finalResult.success) {
+                    new MaterialAlertDialogBuilder(this)
+                            .setTitle(R.string.usb_to_wifi_done_title)
+                            .setIcon(R.drawable.ic_wifi)
+                            .setMessage(getString(R.string.usb_to_wifi_done, finalAddress))
+                            .setPositiveButton(R.string.action_start, (d, w) -> onStartClicked())
+                            .setNegativeButton(R.string.action_close, null)
+                            .show();
+                } else {
+                    ConnectAssistant.showConnectFailure(this, finalResult, null, finalAddress,
+                            this::onStartClicked, this::applyTarget);
+                }
+                startStatusMonitor();
+            });
+        });
     }
 
     private void startUsbConnect(UsbDevice device) {

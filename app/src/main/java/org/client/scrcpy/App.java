@@ -8,6 +8,8 @@ import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.Log;
 
+import com.google.android.material.color.DynamicColors;
+
 import org.client.scrcpy.utils.AdbHelper;
 import org.client.scrcpy.utils.ExecUtil;
 import org.client.scrcpy.utils.PreUtils;
@@ -28,6 +30,8 @@ public class App extends Application implements Application.ActivityLifecycleCal
     @Override
     public void onCreate() {
         super.onCreate();
+        // Material You: use the wallpaper based color palette on Android 12+.
+        DynamicColors.applyToActivitiesIfAvailable(this);
         init();  // 初始化id 数据
         AdbHelper.startAdbServer();
         SessionLog.resetAndStart(this);

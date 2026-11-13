@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/menu_discover"
+        android:icon="@drawable/ic_search"
+        android:title="@string/action_discover"
+        app:showAsAction="ifRoom" />
+
+    <item
+        android:id="@+id/menu_share_log"
+        android:title="@string/action_share_log"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/menu_reboot"
+        android:title="@string/action_reboot"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/menu_power_off"
+        android:title="@string/action_power_off"
+        app:showAsAction="never" />
+</menu>

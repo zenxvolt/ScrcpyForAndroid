@@ -119,6 +119,16 @@ public class ExecUtil {
     }
 
     public static String adbCommend(String[] cmd, Map<String, String> env, File workDir) {
+        return adbCommend(cmd, env, workDir, false);
+    }
+
+    /**
+     * Run an adb command and return its output.
+     *
+     * @param includeStderr also append stderr (needed to diagnose failures of
+     *                      {@code adb connect} / {@code adb pair}).
+     */
+    public static String adbCommend(String[] cmd, Map<String, String> env, File workDir, boolean includeStderr) {
         Process process = null;
         DataOutputStream os = null;
         try {
@@ -139,6 +149,13 @@ public class ExecUtil {
             process.waitFor();
             outThread.join(2000);
             errThread.join(2000);
+            if (includeStderr && errorMsg.length() > 0) {
+                synchronized (errorMsg) {
+                    return successMsg.length() == 0
+                            ? errorMsg.toString()
+                            : successMsg + "\n" + errorMsg;
+                }
+            }
             return successMsg.toString();
         } catch (Exception e) {
             Log.i("TaskPrint", e.toString());
