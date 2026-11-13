@@ -42,6 +42,8 @@ public class EventController {
     private float then;
     private boolean hit = false;
     private boolean proximity = false;
+    /** Ignore the rest of the gesture whose first touch only woke the device up. */
+    private boolean swallowGesture = false;
 
     public EventController(Device device, DroidConnection connection, ScreenEncoder screenEncoder) {
         this.device = device;
@@ -97,11 +99,30 @@ public class EventController {
             } else if (buffer.length >= 4 && buffer[0] == 29) {
                 proximity = false;
             } else {
+                if (buffer[0] != KeyEvent.KEYCODE_POWER && !device.isScreenOn()) {
+                    wakeUp();
+                }
                 injectKeycode(buffer[0]);
             }
         } else {
             int action = buffer[0];
-            if (action == MotionEvent.ACTION_UP && (!device.isScreenOn() || proximity)) {
+            if (!proximity && !device.isScreenOn()) {
+                // Screen off / always-on display: the first touch wakes the device up
+                // (KEYCODE_WAKEUP never turns it off, unlike POWER). The touch itself is
+                // not delivered, so nothing is opened by accident.
+                if (action == MotionEvent.ACTION_DOWN) {
+                    wakeUp();
+                    swallowGesture = true;
+                }
+                return;
+            }
+            if (swallowGesture) {
+                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    swallowGesture = false;
+                }
+                return;
+            }
+            if (action == MotionEvent.ACTION_UP && proximity) {
                 if (hit) {
                     if (now - then < 250) {
                         then = 0;
@@ -151,8 +172,8 @@ public class EventController {
     }
 
     public void control() throws IOException {
-        // on start, turn screen on
-        turnScreenOn();
+        // on start, wake the device up (and turn the panel off if requested)
+        wakeUp();
 
         while (true) {
             //           handleEvent();
@@ -316,8 +337,25 @@ public class EventController {
         return device.injectInputEvent(event, InputManager.INJECT_INPUT_EVENT_MODE_ASYNC);
     }
 
-    private boolean turnScreenOn() {
-        return device.isScreenOn() || injectKeycode(KeyEvent.KEYCODE_POWER);
+    /**
+     * Wake the device up without ever turning it off (KEYCODE_WAKEUP), then,
+     * in "screen off" mode, switch the physical panel off again once Android is
+     * awake: mirroring and control keep working with a dark panel.
+     */
+    private void wakeUp() {
+        if (!device.isScreenOn()) {
+            Ln.i("Device asleep: waking it up");
+            injectKeycode(KeyEvent.KEYCODE_WAKEUP);
+        }
+        if (device.getOptions() != null && device.getOptions().isScreenOff()) {
+            new Thread(() -> {
+                SystemClock.sleep(1200);
+                if (device.isScreenOn()) {
+                    org.server.scrcpy.wrappers.DisplayPower.setPowerMode(
+                            org.server.scrcpy.wrappers.DisplayPower.POWER_MODE_OFF);
+                }
+            }, "panel-off").start();
+        }
     }
 
 }

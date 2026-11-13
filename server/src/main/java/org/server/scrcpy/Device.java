@@ -19,7 +19,10 @@ public final class Device {
     private int layerStack;
     private int densityDpi = 160;
 
+    private final Options options;
+
     public Device(Options options) {
+        this.options = options;
         screenInfo = computeScreenInfo(options.getMaxSize());
         registerRotationWatcher(new IRotationWatcher.Stub() {
             @Override
@@ -34,6 +37,10 @@ public final class Device {
                 }
             }
         });
+    }
+
+    public Options getOptions() {
+        return options;
     }
 
     public static String getDeviceName() {

@@ -16,6 +16,7 @@ public class Constant {
     public static final int BITRATE_OPTIONS_ADDED = 6;
     public static final String PREFERENCE_SPINNER_PRIORITY = "spinner_stream_priority";
     public static final String ROOT_MODE = "root_mode";
+    public static final String SCREEN_OFF = "turn_screen_off";
 
   /** Index of the "Auto" entry in {@code options_resolution_values}. */
     public static final int RESOLUTION_AUTO_INDEX = 0;

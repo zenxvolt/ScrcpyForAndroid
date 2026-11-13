@@ -20,6 +20,8 @@ public class Options {
     private String videoEncoder = DEFAULT_ENCODER;
     private int frameRate = 60;
     private String priority = PRIORITY_BALANCED;
+    /** Turn the target's physical screen off while mirroring (it keeps running). */
+    private boolean screenOff = false;
 
     public String getIp() {
         return ip;
@@ -89,6 +91,14 @@ public class Options {
         this.frameRate = frameRate > 0 ? frameRate : 60;
     }
 
+    public boolean isScreenOff() {
+        return screenOff;
+    }
+
+    public void setScreenOff(boolean screenOff) {
+        this.screenOff = screenOff;
+    }
+
     public String getPriority() {
         return priority;
     }
@@ -146,6 +156,9 @@ public class Options {
         if (args.length > 8) {
             options.setPriority(args[8]);
         }
+        if (args.length > 9) {
+            options.setScreenOff(Boolean.parseBoolean(args[9]));
+        }
         return options;
     }
 
@@ -159,7 +172,8 @@ public class Options {
                 videoCodec,
                 hasCustomEncoder() ? videoEncoder : DEFAULT_ENCODER,
                 Integer.toString(frameRate),
-                priority
+                priority,
+                String.valueOf(screenOff)
         };
     }
 }

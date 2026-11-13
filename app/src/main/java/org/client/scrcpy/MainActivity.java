@@ -112,6 +112,7 @@ public class MainActivity extends AppCompatActivity implements Scrcpy.ServiceCal
     private int videoFrameRate = 60;
     private String streamPriority = Options.PRIORITY_BALANCED;
     private boolean rootMode = false;
+    private boolean turnScreenOff = false;
     private Context context;
     private String serverAdr = null;
     private SurfaceView surfaceView;
@@ -718,6 +719,10 @@ public class MainActivity extends AppCompatActivity implements Scrcpy.ServiceCal
         if (rootModeSwitch != null) {
             rootModeSwitch.setChecked(PreUtils.get(context, Constant.ROOT_MODE, false));
         }
+        CompoundButton screenOffSwitch = findViewById(R.id.switch_screen_off);
+        if (screenOffSwitch != null) {
+            screenOffSwitch.setChecked(PreUtils.get(context, Constant.SCREEN_OFF, false));
+        }
         migrateBitratePreference();
 
         setupDropdown(R.array.options_bitrate_keys, R.id.spinner_video_bitrate, Constant.PREFERENCE_SPINNER_BITRATE, null);
@@ -993,6 +998,9 @@ public class MainActivity extends AppCompatActivity implements Scrcpy.ServiceCal
         CompoundButton rootModeSwitch = findViewById(R.id.switch_root_mode);
         rootMode = rootModeSwitch != null && rootModeSwitch.isChecked();
         PreUtils.put(context, Constant.ROOT_MODE, rootMode);
+        CompoundButton screenOffSwitch = findViewById(R.id.switch_screen_off);
+        turnScreenOff = screenOffSwitch != null && screenOffSwitch.isChecked();
+        PreUtils.put(context, Constant.SCREEN_OFF, turnScreenOff);
         streamPriority = getResources().getStringArray(R.array.options_priority_values)[priorityIndex];
         PreUtils.put(context, Constant.CONTROL_NO, a_Switch0.isChecked());
         PreUtils.put(context, Constant.CONTROL_NAV, a_Switch1.isChecked());
@@ -1035,6 +1043,7 @@ public class MainActivity extends AppCompatActivity implements Scrcpy.ServiceCal
         options.setFrameRate(videoFrameRate);
         options.setPriority(streamPriority);
         options.setRootMode(rootMode);
+        options.setScreenOff(turnScreenOff);
         return options;
     }
 

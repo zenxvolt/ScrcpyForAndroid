@@ -34,7 +34,7 @@ The home screen has quick actions under the address field:
 - Hit **start** button.
 - Accept and trust(check always allow from this computer) the ADB connection prompt on target device(Some custom roms don't have this prompt).
 - Thats all! You should be seeing the screen of remote android device.
-- To wake up the remote device, **double tap anywhere on screen**.
+- To wake up the remote device, **tap the mirrored screen once** (the first tap only wakes it). Turn on *Turn target screen off while mirroring* to keep the target's panel dark while you keep using it remotely.
 - To put the remote device to sleep, **close proxmity sensor and double tap anywhere on the screen**. 
 - To bring back the local android system navbar while mirroring the remote device, **swipe up from the bottom edge of screen**.
 
