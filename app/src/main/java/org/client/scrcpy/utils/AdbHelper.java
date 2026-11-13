@@ -325,6 +325,28 @@ public class AdbHelper {
         return finished ? out[0] : "timeout";
     }
 
+    /**
+     * Remove every port forward of the private adb server.
+     * <p>
+     * {@code adb forward --remove-all} fails with "more than one device" when
+     * several devices are connected (wireless debugging adds an extra mDNS
+     * entry such as {@code adb-XXXX._adb-tls-connect._tcp} next to ip:port), so
+     * remove each forward with its own serial.
+     */
+    public static void removeAllForwards(Context ctx) {
+        String list = adbCmd(ctx, "forward", "--list");
+        if (!TextUtils.isEmpty(list)) {
+            for (String line : list.split("\\r?\\n")) {
+                String[] parts = line.trim().split("\\s+");
+                if (parts.length >= 2 && parts[1].startsWith("tcp:")) {
+                    adbCmd(ctx, "-s", parts[0], "forward", "--remove", parts[1]);
+                }
+            }
+        }
+        // Harmless when it fails; covers the single-device case of older servers.
+        adbCmd(ctx, "forward", "--remove-all");
+    }
+
     public static boolean isPairSuccess(String output) {
         return output != null && output.toLowerCase(java.util.Locale.ROOT).contains("successfully paired");
     }

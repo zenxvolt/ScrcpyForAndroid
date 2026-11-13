@@ -56,6 +56,17 @@ public final class Device {
         return screenInfo;
     }
 
+    /**
+     * Re-scale the video to {@code maxSize} (used when the encoder rejects the
+     * native resolution). Must be called before the size is sent to the client.
+     */
+    public synchronized void setVideoMaxSize(int maxSize) {
+        Size videoSize = screenInfo.getDeviceSize().scaleTo(maxSize);
+        screenInfo = screenInfo.withVideoSize(videoSize);
+        Ln.i("Video size changed to " + videoSize.getWidth() + "x" + videoSize.getHeight()
+                + " (max " + maxSize + ")");
+    }
+
     @SuppressWarnings("checkstyle:MagicNumber")
     private ScreenInfo computeScreenInfo(int maxSize) {
         // Compute the video size and the padding of the content inside this video.

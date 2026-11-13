@@ -1827,7 +1827,7 @@ public class MainActivity extends AppCompatActivity implements Scrcpy.ServiceCal
                 // 若不移除，USB 连接的 AdbForwardBridge 绑定 7008 会报
                 // "bind failed: address already in use"。
                 try {
-                    AdbHelper.adbCmd(App.mContext, "forward", "--remove-all");
+                    AdbHelper.removeAllForwards(App.mContext);
                 } catch (Exception ignored) {
                 }
                 AdbHelper.writeAssetsJarServer(App.mContext);
@@ -1894,10 +1894,12 @@ public class MainActivity extends AppCompatActivity implements Scrcpy.ServiceCal
         // 移除 adb server 中的端口转发（WiFi 连接创建的 tcp:7008 → tcp:7007），
         // 否则该 forward 会持续占用 7008 端口，之后用 USB 连接会报
         // "bind failed: address already in use"
-        try {
-            AdbHelper.adbCmd(App.mContext, "forward", "--remove-all");
-        } catch (Exception ignored) {
-        }
+        ThreadUtils.execute(() -> {
+            try {
+                AdbHelper.removeAllForwards(App.mContext);
+            } catch (Exception ignored) {
+            }
+        });
         if (headlessMode && !resumeScrcpy && !result_of_Rotation) {
             if (!userDisconnect) {
                 Dialog.displayDialog(this, getString(R.string.connect_faild),

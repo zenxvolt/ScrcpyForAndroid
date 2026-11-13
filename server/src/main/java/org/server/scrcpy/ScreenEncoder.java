@@ -45,6 +45,11 @@ public class ScreenEncoder implements Device.RotationListener {
     private String mimeType = "video/avc";
     private String encoderName = "";
     private String lastGoodEncoder = "";
+    /** Use only the mandatory MediaFormat keys (some vendor encoders reject the optional ones). */
+    private boolean minimalFormat = false;
+
+    /** Video max sizes tried, in order, when the encoder rejects the native resolution. */
+    private static final int[] FALLBACK_MAX_SIZES = {1920, 1600, 1280, 1024, 800};
 
     public ScreenEncoder(int bitRate, int frameRate, int iFrameInterval) {
         this(bitRate, frameRate, iFrameInterval, "video/avc", "");
@@ -201,6 +206,10 @@ public class ScreenEncoder implements Device.RotationListener {
         format.setInteger(MediaFormat.KEY_FRAME_RATE, frameRate);
         format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
         format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, iFrameInterval);
+        format.setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 100_000);
+        if (minimalFormat) {
+            return format;
+        }
         format.setInteger("max-bframes", 0);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             format.setInteger(MediaFormat.KEY_COLOR_RANGE, MediaFormat.COLOR_RANGE_LIMITED);
@@ -217,7 +226,6 @@ public class ScreenEncoder implements Device.RotationListener {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1);
         }
-        format.setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 100_000);
         return format;
     }
 
@@ -289,8 +297,78 @@ public class ScreenEncoder implements Device.RotationListener {
         }).start();
     }
 
+    /**
+     * Try to configure an encoder for {@code width x height}.
+     *
+     * @param attempt 0 prefers hardware encoders, 1 software encoders
+     * @return true (and remembers the encoder) when configure() succeeds
+     */
+    private boolean tryConfigure(int attempt, int width, int height) {
+        MediaCodec codec = null;
+        try {
+            codec = createCodec(attempt);
+            MediaFormat format = createFormat(bitRate, frameRate, iFrameInterval);
+            setSize(format, width, height);
+            configure(codec, format);
+            lastGoodEncoder = codec.getName();
+            return true;
+        } catch (Exception e) {
+            Ln.w("Encoder " + (codec != null ? codec.getName() : "?") + " rejected " + width + "x" + height
+                    + (minimalFormat ? " (minimal format)" : "") + ": " + e);
+            return false;
+        } finally {
+            if (codec != null) {
+                try {
+                    codec.release();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+    }
+
+    /**
+     * Before telling the client the video size, make sure an encoder accepts it.
+     * Many vendor encoders (e.g. Qualcomm c2.qti.avc.encoder at 1080x2400) throw
+     * IllegalArgumentException from configure(): fall back to a format without
+     * optional keys, then to smaller sizes, then to software encoders. This is
+     * what upstream scrcpy does with "downsize on error".
+     */
+    private void probeEncoder(Device device) {
+        Size videoSize = device.getScreenInfo().getVideoSize();
+        int nativeMax = Math.max(videoSize.getWidth(), videoSize.getHeight());
+        List<Integer> maxSizes = new ArrayList<>();
+        maxSizes.add(nativeMax);
+        for (int max : FALLBACK_MAX_SIZES) {
+            if (max < nativeMax) {
+                maxSizes.add(max);
+            }
+        }
+        for (int attempt = 0; attempt <= 1; attempt++) {
+            for (int max : maxSizes) {
+                Size size = device.getScreenInfo().getDeviceSize().scaleTo(max);
+                if (max == nativeMax) {
+                    size = videoSize;
+                }
+                for (boolean minimal : new boolean[]{false, true}) {
+                    minimalFormat = minimal;
+                    if (tryConfigure(attempt, size.getWidth(), size.getHeight())) {
+                        if (max != nativeMax) {
+                            device.setVideoMaxSize(max);
+                        }
+                        Ln.i("Encoder check OK: " + lastGoodEncoder + " " + size.getWidth() + "x" + size.getHeight()
+                                + (minimal ? " (minimal format)" : ""));
+                        return;
+                    }
+                }
+            }
+        }
+        minimalFormat = false;
+        Ln.w("No encoder configuration succeeded during the check, continuing with defaults");
+    }
+
     public void streamScreen(Options options, Device device, OutputStream outputStream) throws IOException {
         // Log.d("ScreenCapture", buildDisplayListMessage());
+        probeEncoder(device);
         Size deviceSize = device.getScreenInfo().getDeviceSize();
         Size videoSize = device.getScreenInfo().getVideoSize();
         int[] buf = new int[]{
@@ -327,12 +405,12 @@ public class ScreenEncoder implements Device.RotationListener {
 //                Rect deviceRect = device.getScreenInfo().getDeviceSize().toRect();
                 Rect videoRect = device.getScreenInfo().getVideoSize().toRect();
                 setSize(format, videoRect.width(), videoRect.height());
-                configure(codec, format);
                 Surface surface = null;
 
                 // setDisplaySurface(display, surface, deviceRect, videoRect);
 
                 try {
+                    configure(codec, format);
                     surface = codec.createInputSurface();
                     capture.start(surface);
                     codec.start();
@@ -345,6 +423,11 @@ public class ScreenEncoder implements Device.RotationListener {
                         throw e;
                     } else {
                         errorCount++;
+                    }
+                    if (!minimalFormat) {
+                        // Retry without the optional MediaFormat keys.
+                        minimalFormat = true;
+                        format = createFormat(bitRate, frameRate, iFrameInterval);
                     }
                     Ln.i("Retrying...");
                     alive = true;

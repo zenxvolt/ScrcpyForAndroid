@@ -19,6 +19,11 @@ public final class ScreenInfo {
         return videoSize;
     }
 
+    /** Same screen, different (e.g. downscaled) video size. */
+    public ScreenInfo withVideoSize(Size newVideoSize) {
+        return new ScreenInfo(deviceSize, newVideoSize, rotated);
+    }
+
     public ScreenInfo withRotation(int rotation) {
         boolean newRotated = (rotation & 1) != 0;
         if (rotated == newRotated) {
