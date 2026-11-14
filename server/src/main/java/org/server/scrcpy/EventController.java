@@ -20,6 +20,7 @@ import org.server.scrcpy.model.MediaPacket;
 import org.server.scrcpy.wrappers.InputManager;
 import org.server.scrcpy.control.PointersState;
 import org.server.scrcpy.control.Pointer;
+import org.server.scrcpy.control.PowerGesture;
 import org.server.scrcpy.device.Point;
 
 import java.io.IOException;
@@ -39,14 +40,15 @@ public class EventController {
 
     private final PointersState pointersState = new PointersState();
 
-    private float then;
-    private boolean hit = false;
+    private final PowerGesture powerGesture;
+    private boolean screenOnForGesture;
     private boolean proximity = false;
 
     public EventController(Device device, DroidConnection connection, ScreenEncoder screenEncoder) {
         this.device = device;
         this.connection = connection;
         this.screenEncoder = screenEncoder;
+        powerGesture = new PowerGesture(device.getDensityDpi());
         initPointers();
     }
 
@@ -90,8 +92,8 @@ public class EventController {
     private void injectControlEvenv(byte[] buf) {
         int[] buffer = controlByteToIntArray(buf);
 
-        long now = SystemClock.uptimeMillis();
         if (buffer.length == 1 || (buffer.length < 5 && buffer.length >= 4 && buffer[2] == 0 && buffer[3] == 0)) {
+            powerGesture.reset();
             if (buffer.length >= 4 && buffer[0] == 28) {
                 proximity = true;           // Proximity event
             } else if (buffer.length >= 4 && buffer[0] == 29) {
@@ -101,42 +103,23 @@ public class EventController {
             }
         } else {
             int action = buffer[0];
-            if (action == MotionEvent.ACTION_UP && (!device.isScreenOn() || proximity)) {
-                if (hit) {
-                    if (now - then < 250) {
-                        then = 0;
-                        hit = false;
-                        injectKeycode(KeyEvent.KEYCODE_POWER);
-                    } else {
-                        then = now;
-                    }
-                } else {
-                    hit = true;
-                    then = now;
-                }
-
-            } else {
-//                        if (action == MotionEvent.ACTION_DOWN) {
-//                            lastMouseDown = now;
-//                        }
-//                        int button = buffer[1];
-//                        int X = buffer[2];
-//                        int Y = buffer[3];
-////                        new android.graphics.Point(point.getX(), point.getY())
-//                        Point point = new Point(X, Y);
-//                        Point newpoint = device.NewgetPhysicalPoint(point);
-//                        setPointerCoords(newpoint);
-//                        MotionEvent event = MotionEvent.obtain(lastMouseDown, now, action, 1, pointerProperties, pointerCoords, 0, button, 1f, 1f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
-//                        injectEvent(event);
-
-                Point point = new Point(buffer[2], buffer[3]);
-                Point newpoint = device.NewgetPhysicalPoint(point);
-                int pointerId = buffer.length >= 5 ? buffer[4] : 0;
-                if (action == MotionEvent.ACTION_DOWN) {
-                    Ln.i("inject touch DOWN " + newpoint.getX() + "," + newpoint.getY()
-                            + " displayId=" + device.getDisplayId());
-                }
-                injectTouch(action, pointerId, newpoint, buffer[1]);
+            Point point = new Point(buffer[2], buffer[3]);
+            Point newpoint = device.NewgetPhysicalPoint(point);
+            int pointerId = buffer.length >= 5 ? buffer[4] : 0;
+            if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_UP) {
+                // Avoid a synchronous power-service query for every MOVE packet.
+                screenOnForGesture = device.isScreenOn();
+            }
+            int powerKey = powerGesture.onTouch(action, newpoint.getX(), newpoint.getY(),
+                    SystemClock.uptimeMillis(), screenOnForGesture, proximity);
+            if (action == MotionEvent.ACTION_DOWN) {
+                Ln.i("inject touch DOWN " + newpoint.getX() + "," + newpoint.getY()
+                        + " displayId=" + device.getDisplayId());
+            }
+            // Always finish the touch stream, including UP, before changing screen state.
+            injectTouch(action, pointerId, newpoint, buffer[1]);
+            if (powerKey != KeyEvent.KEYCODE_UNKNOWN) {
+                injectKeycode(powerKey);
             }
         }
     }
@@ -317,7 +300,8 @@ public class EventController {
     }
 
     private boolean turnScreenOn() {
-        return device.isScreenOn() || injectKeycode(KeyEvent.KEYCODE_POWER);
+        // WAKEUP is safe even if the screen wakes between the query and injection.
+        return device.isScreenOn() || injectKeycode(KeyEvent.KEYCODE_WAKEUP);
     }
 
 }
