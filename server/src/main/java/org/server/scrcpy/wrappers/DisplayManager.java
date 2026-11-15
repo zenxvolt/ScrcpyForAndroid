@@ -18,9 +18,31 @@ public final class DisplayManager {
     private final IInterface manager;
 
     private Method createVirtualDisplayMethod;
+    private boolean displayStateWarningLogged;
 
     public DisplayManager(IInterface manager) {
         this.manager = manager;
+    }
+
+    /** Query the controlled physical display, not a mirror's global interactivity. */
+    public int getDisplayState(int displayId) {
+        try {
+            Method method = manager.getClass().getMethod("getDisplayInfo", int.class);
+            method.setAccessible(true);
+            Object info = method.invoke(manager, displayId);
+            if (info == null) {
+                return Display.STATE_UNKNOWN;
+            }
+            Field state = info.getClass().getField("state");
+            state.setAccessible(true);
+            return state.getInt(info);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            if (!displayStateWarningLogged) {
+                displayStateWarningLogged = true;
+                Ln.w("Display state query unavailable for displayId=" + displayId + ": " + e);
+            }
+            return Display.STATE_UNKNOWN;
+        }
     }
 
     private static DisplayInfo getDisplayInfoFromDumpsysDisplay(int displayId) {

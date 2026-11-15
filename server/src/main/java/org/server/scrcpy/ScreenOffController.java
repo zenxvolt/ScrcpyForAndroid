@@ -3,6 +3,7 @@ package org.server.scrcpy;
 import android.os.SystemClock;
 
 import org.server.scrcpy.wrappers.DisplayPower;
+import org.server.scrcpy.device.ScreenState;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -54,15 +55,16 @@ public final class ScreenOffController {
             boolean first = true;
             while (true) {
                 SystemClock.sleep(1000);
+                ScreenState screenState = device.getScreenState();
                 // Detect delayed sleep too, not only the first panel-off attempt.
                 // Otherwise the next touch wakes the device and the keeper turns
                 // it off again, producing a wake/off loop on the lock screen.
-                if (!useBacklight && isPanelOff() && !device.isScreenOn()) {
+                if (!useBacklight && isPanelOff() && screenState == ScreenState.OFF) {
                     disablePanelMode();
                     continue;
                 }
                 // Leave time for a wake-up to finish before darkening the screen.
-                if (SystemClock.uptimeMillis() - wakeTracker.lastWakeAt() < 1500 || !device.isScreenOn()) {
+                if (SystemClock.uptimeMillis() - wakeTracker.lastWakeAt() < 1500 || screenState != ScreenState.ON) {
                     continue;
                 }
                 if (useBacklight) {
@@ -175,7 +177,7 @@ public final class ScreenOffController {
             // Some ROMs (MIUI) put the device to sleep when the panel is switched off:
             // touching would then wake it and blink forever. Detect it and give up.
             SystemClock.sleep(2500);
-            if (!device.isScreenOn()) {
+            if (device.getScreenState() == ScreenState.OFF) {
                 disablePanelMode();
             }
         }

@@ -108,6 +108,10 @@ public final class Server {
         }
 
         Options options = createOptions(args);
+        Ln.i("Server power-state-v2: device=" + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL
+                + " Android=" + android.os.Build.VERSION.RELEASE + " SDK=" + android.os.Build.VERSION.SDK_INT
+                + " uid=" + android.os.Process.myUid()
+                + " screenOff=" + options.isScreenOff());
         scrcpy(options);
     }
 }

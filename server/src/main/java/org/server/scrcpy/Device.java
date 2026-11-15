@@ -1,6 +1,7 @@
 package org.server.scrcpy;
 
 import org.server.scrcpy.device.Point;
+import org.server.scrcpy.device.ScreenState;
 import android.os.Build;
 import android.os.RemoteException;
 import android.view.IRotationWatcher;
@@ -20,6 +21,8 @@ public final class Device {
     private int densityDpi = 160;
 
     private final Options options;
+    private ScreenState lastLoggedScreenState;
+    private int lastLoggedDisplayState = -1;
 
     public Device(Options options) {
         this.options = options;
@@ -127,7 +130,25 @@ public final class Device {
     }
 
     public boolean isScreenOn() {
-        return ServiceManager.getPowerManager().isScreenOn();
+        // Unknown state must not swallow touches or cause repeated automatic wakes.
+        return getScreenState() != ScreenState.OFF;
+    }
+
+    public synchronized ScreenState getScreenState() {
+        int displayState = ServiceManager.getDisplayManager().getDisplayState(displayId);
+        ScreenState state = ScreenState.resolve(displayState, null);
+        Boolean interactive = null;
+        if (state == ScreenState.UNKNOWN) {
+            interactive = ServiceManager.getPowerManager().isInteractive();
+            state = ScreenState.resolve(displayState, interactive);
+        }
+        if (state != lastLoggedScreenState || displayState != lastLoggedDisplayState) {
+            Ln.i("Screen state=" + state + " displayId=" + displayId
+                    + " displayState=" + displayState + " interactiveFallback=" + interactive);
+            lastLoggedScreenState = state;
+            lastLoggedDisplayState = displayState;
+        }
+        return state;
     }
 
     public void registerRotationWatcher(IRotationWatcher rotationWatcher) {
