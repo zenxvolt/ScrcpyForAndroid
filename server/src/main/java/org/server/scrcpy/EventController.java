@@ -20,6 +20,8 @@ import org.server.scrcpy.model.MediaPacket;
 import org.server.scrcpy.wrappers.InputManager;
 import org.server.scrcpy.control.PointersState;
 import org.server.scrcpy.control.Pointer;
+import org.server.scrcpy.control.PowerGesture;
+import org.server.scrcpy.control.TouchWakeGate;
 import org.server.scrcpy.device.Point;
 
 import java.io.IOException;
@@ -39,11 +41,9 @@ public class EventController {
 
     private final PointersState pointersState = new PointersState();
 
-    private float then;
-    private boolean hit = false;
+    private final PowerGesture powerGesture;
+    private final TouchWakeGate touchWakeGate = new TouchWakeGate();
     private boolean proximity = false;
-    /** Ignore the rest of the gesture whose first touch only woke the device up. */
-    private boolean swallowGesture = false;
     /** Last time we sent KEYCODE_WAKEUP (uptime ms). */
     private volatile long lastWakeAt = 0;
 
@@ -51,6 +51,7 @@ public class EventController {
         this.device = device;
         this.connection = connection;
         this.screenEncoder = screenEncoder;
+        powerGesture = new PowerGesture(device.getDensityDpi());
         initPointers();
     }
 
@@ -94,8 +95,8 @@ public class EventController {
     private void injectControlEvenv(byte[] buf) {
         int[] buffer = controlByteToIntArray(buf);
 
-        long now = SystemClock.uptimeMillis();
         if (buffer.length == 1 || (buffer.length < 5 && buffer.length >= 4 && buffer[2] == 0 && buffer[3] == 0)) {
+            powerGesture.reset();
             if (buffer.length >= 4 && buffer[0] == 28) {
                 proximity = true;           // Proximity event
             } else if (buffer.length >= 4 && buffer[0] == 29) {
@@ -108,66 +109,36 @@ public class EventController {
             }
         } else {
             int action = buffer[0];
-            if (!proximity && !device.isScreenOn()) {
-                // Screen off / always-on display: the first touch wakes the device up
-                // (KEYCODE_WAKEUP never turns it off, unlike POWER).
-                if (action == MotionEvent.ACTION_DOWN) {
-                    Ln.i("Touch while not interactive (screenOffMode=" + isScreenOffMode() + ")");
-                    wakeUp();
-                    if (!isScreenOffMode()) {
-                        // Normal mode: do not deliver the waking touch, so nothing opens by accident.
-                        swallowGesture = true;
-                        return;
-                    }
-                    // Screen-off mode: some ROMs (MIUI) report "not interactive" while the panel
-                    // is forced off, so swallowing here would eat every swipe on the lock
-                    // screen. Deliver the gesture.
-                } else if (!isScreenOffMode()) {
-                    return;
-                }
+            // Decide whether to consume the gesture at DOWN only. Once forwarded,
+            // its MOVE/UP events must reach Android even if screen state changes.
+            boolean screenOn = action != MotionEvent.ACTION_DOWN || device.isScreenOn();
+            TouchWakeGate.Result result = touchWakeGate.onTouch(action, screenOn, proximity,
+                    isScreenOffMode(), ScreenOffController.isPanelOff());
+            if (result == TouchWakeGate.Result.WAKE_AND_DELIVER) {
+                wakeUp();
             }
-            if (swallowGesture) {
-                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-                    swallowGesture = false;
+            if (result == TouchWakeGate.Result.WAKE_UP || result == TouchWakeGate.Result.CONSUME) {
+                powerGesture.reset();
+                if (result == TouchWakeGate.Result.WAKE_UP) {
+                    wakeUp();
                 }
                 return;
             }
-            if (action == MotionEvent.ACTION_UP && proximity) {
-                if (hit) {
-                    if (now - then < 250) {
-                        then = 0;
-                        hit = false;
-                        injectKeycode(KeyEvent.KEYCODE_POWER);
-                    } else {
-                        then = now;
-                    }
-                } else {
-                    hit = true;
-                    then = now;
-                }
 
-            } else {
-//                        if (action == MotionEvent.ACTION_DOWN) {
-//                            lastMouseDown = now;
-//                        }
-//                        int button = buffer[1];
-//                        int X = buffer[2];
-//                        int Y = buffer[3];
-////                        new android.graphics.Point(point.getX(), point.getY())
-//                        Point point = new Point(X, Y);
-//                        Point newpoint = device.NewgetPhysicalPoint(point);
-//                        setPointerCoords(newpoint);
-//                        MotionEvent event = MotionEvent.obtain(lastMouseDown, now, action, 1, pointerProperties, pointerCoords, 0, button, 1f, 1f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
-//                        injectEvent(event);
-
-                Point point = new Point(buffer[2], buffer[3]);
-                Point newpoint = device.NewgetPhysicalPoint(point);
-                int pointerId = buffer.length >= 5 ? buffer[4] : 0;
-                if (action == MotionEvent.ACTION_DOWN) {
-                    Ln.i("inject touch DOWN " + newpoint.getX() + "," + newpoint.getY()
-                            + " displayId=" + device.getDisplayId());
-                }
-                injectTouch(action, pointerId, newpoint, buffer[1]);
+            Point point = new Point(buffer[2], buffer[3]);
+            Point newpoint = device.NewgetPhysicalPoint(point);
+            int pointerId = buffer.length >= 5 ? buffer[4] : 0;
+            // Waking is handled by the single-tap gate; only the legacy proximity
+            // sleep shortcut is recognized here, without consuming any touch event.
+            int powerKey = powerGesture.onTouch(action, newpoint.getX(), newpoint.getY(),
+                    SystemClock.uptimeMillis(), true, proximity);
+            if (action == MotionEvent.ACTION_DOWN) {
+                Ln.i("inject touch DOWN " + newpoint.getX() + "," + newpoint.getY()
+                        + " displayId=" + device.getDisplayId());
+            }
+            injectTouch(action, pointerId, newpoint, buffer[1]);
+            if (powerKey != KeyEvent.KEYCODE_UNKNOWN) {
+                injectKeycode(powerKey);
             }
         }
     }
@@ -182,7 +153,7 @@ public class EventController {
     }
 
     public void control() throws IOException {
-        // on start, wake the device up (and turn the panel off if requested)
+        // On start, wake the device up.
         wakeUp();
 
         while (true) {
@@ -347,30 +318,23 @@ public class EventController {
         return device.injectInputEvent(event, InputManager.INJECT_INPUT_EVENT_MODE_ASYNC);
     }
 
-    /**
-     * Wake the device up without ever turning it off (KEYCODE_WAKEUP), then,
-     * in "screen off" mode, switch the physical panel off again once Android is
-     * awake: mirroring and control keep working with a dark panel.
-     */
     private boolean isScreenOffMode() {
         return device.getOptions() != null && device.getOptions().isScreenOff();
     }
 
+    /** Wake the device without treating an intentionally dark panel as sleep. */
     private void wakeUp() {
         long now = SystemClock.uptimeMillis();
-        // Never fire wake-ups back to back (that made the panel blink).
-        if (!device.isScreenOn() && now - lastWakeAt > 1500) {
-            Ln.i("Device asleep: waking it up");
-            lastWakeAt = now;
-            injectKeycode(KeyEvent.KEYCODE_WAKEUP);
+        // Serialize with panel-off application so it cannot race with this wake-up.
+        synchronized (ScreenOffController.class) {
+            if (!ScreenOffController.isPanelOff() && !device.isScreenOn() && now - lastWakeAt > 1500) {
+                Ln.i("Device asleep: waking it up");
+                lastWakeAt = now;
+                injectKeycode(KeyEvent.KEYCODE_WAKEUP);
+            }
         }
         if (isScreenOffMode()) {
-            startPanelKeeper();
+            ScreenOffController.start(device, () -> lastWakeAt);
         }
     }
-
-    private void startPanelKeeper() {
-        ScreenOffController.start(device, () -> lastWakeAt);
-    }
-
 }

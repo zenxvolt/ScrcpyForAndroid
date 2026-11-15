@@ -54,6 +54,13 @@ public final class ScreenOffController {
             boolean first = true;
             while (true) {
                 SystemClock.sleep(1000);
+                // Detect delayed sleep too, not only the first panel-off attempt.
+                // Otherwise the next touch wakes the device and the keeper turns
+                // it off again, producing a wake/off loop on the lock screen.
+                if (!useBacklight && isPanelOff() && !device.isScreenOn()) {
+                    disablePanelMode();
+                    continue;
+                }
                 // Leave time for a wake-up to finish before darkening the screen.
                 if (SystemClock.uptimeMillis() - wakeTracker.lastWakeAt() < 1500 || !device.isScreenOn()) {
                     continue;
@@ -145,11 +152,23 @@ public final class ScreenOffController {
 
     // ----------------------------------------------------------------- panel mode
 
+    public static synchronized boolean isPanelOff() {
+        return panelModeUsed;
+    }
+
+    private static synchronized void disablePanelMode() {
+        panelModeUnsupported = true;
+        Ln.w("This ROM puts the device to sleep when the panel is turned off: "
+                + "screen off mode disabled (enable Root mode to use the backlight method)");
+        DisplayPower.setPowerMode(DisplayPower.POWER_MODE_NORMAL);
+        panelModeUsed = false;
+    }
+
     private static void panelOff(Device device, boolean log) {
-        if (!DisplayPower.setPowerMode(DisplayPower.POWER_MODE_OFF, log)) {
-            return;
-        }
         synchronized (ScreenOffController.class) {
+            if (!DisplayPower.setPowerMode(DisplayPower.POWER_MODE_OFF, log)) {
+                return;
+            }
             panelModeUsed = true;
         }
         if (log) {
@@ -157,13 +176,7 @@ public final class ScreenOffController {
             // touching would then wake it and blink forever. Detect it and give up.
             SystemClock.sleep(2500);
             if (!device.isScreenOn()) {
-                panelModeUnsupported = true;
-                Ln.w("This ROM puts the device to sleep when the panel is turned off: "
-                        + "screen off mode disabled (enable Root mode to use the backlight method)");
-                DisplayPower.setPowerMode(DisplayPower.POWER_MODE_NORMAL);
-                synchronized (ScreenOffController.class) {
-                    panelModeUsed = false;
-                }
+                disablePanelMode();
             }
         }
     }
