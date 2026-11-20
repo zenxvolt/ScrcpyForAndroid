@@ -70,14 +70,18 @@ public final class ScreenOffController {
         keeper = new Thread(() -> {
             boolean first = true;
             while (true) {
-                long sinceWake = SystemClock.uptimeMillis() - wakeTracker.lastWakeAt();
                 if (useBacklight) {
-                    // Android rewrites the brightness on wake-up and during its dim
-                    // animation: overwrite it before the panel visibly lights up.
+                    // Android rewrites the brightness on wake-up (before the display
+                    // state reports ON) and during its dim animation: overwrite it
+                    // whatever the state, before the panel visibly lights up. When
+                    // the display is really off the value is already 0: no write.
+                    long sinceWake = SystemClock.uptimeMillis() - wakeTracker.lastWakeAt();
                     SystemClock.sleep(pollIntervalMs(sinceWake));
-                } else {
-                    SystemClock.sleep(1000);
+                    backlightOff(first);
+                    first = false;
+                    continue;
                 }
+                SystemClock.sleep(1000);
                 ScreenState screenState = device.getScreenState();
                 // Detect delayed sleep too, not only the first panel-off attempt.
                 // Otherwise the next touch wakes the device and the keeper turns
@@ -89,9 +93,7 @@ public final class ScreenOffController {
                 if (screenState != ScreenState.ON) {
                     continue;
                 }
-                if (useBacklight) {
-                    backlightOff(first);
-                } else if (SystemClock.uptimeMillis() - wakeTracker.lastWakeAt() < 1500) {
+                if (SystemClock.uptimeMillis() - wakeTracker.lastWakeAt() < 1500) {
                     // Panel power mode: leave time for a wake-up to finish first,
                     // switching the panel off mid wake-up makes some ROMs sleep.
                     continue;
