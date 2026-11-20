@@ -1,8 +1,12 @@
 package org.server.scrcpy;
 
 import android.os.SystemClock;
+import android.view.InputDevice;
+import android.view.KeyCharacterMap;
+import android.view.KeyEvent;
 
 import org.server.scrcpy.wrappers.DisplayPower;
+import org.server.scrcpy.wrappers.InputManager;
 import org.server.scrcpy.device.ScreenState;
 
 import java.io.File;
@@ -25,7 +29,9 @@ import java.util.Map;
  *     like scrcpy's --turn-screen-off. If the ROM reacts by putting the device
  *     to sleep, the mode is given up instead of blinking forever.</li>
  * </ul>
- * Everything is restored when the server exits.
+ * When the server exits (disconnect), the target is put to sleep instead of
+ * lighting the panel back up; Android restores the brightness itself on the
+ * next wake-up. The panel is only restored directly if sleeping fails.
  */
 public final class ScreenOffController {
 
@@ -36,6 +42,14 @@ public final class ScreenOffController {
     private static boolean panelModeUsed = false;
     private static volatile boolean panelModeUnsupported = false;
     private static Thread keeper;
+    private static Device device;
+    private static List<File> backlightNodes = new ArrayList<>();
+
+    /** Backlight polling: fast right after a wake-up, when Android re-applies the brightness. */
+    static final long FAST_POLL_MS = 16;
+    static final long SLOW_POLL_MS = 100;
+    static final long FAST_POLL_WINDOW_MS = 3000;
+    private static final long SLEEP_TIMEOUT_MS = 2000;
 
     private ScreenOffController() {
     }
@@ -49,11 +63,24 @@ public final class ScreenOffController {
         if (keeper != null) {
             return;
         }
-        final boolean useBacklight = isRoot() && !findBacklightNodes().isEmpty();
+        ScreenOffController.device = device;
+        backlightNodes = isRoot() ? findBacklightNodes() : new ArrayList<>();
+        final boolean useBacklight = !backlightNodes.isEmpty();
         Ln.i("Screen off mode: " + (useBacklight ? "backlight (root)" : "panel power mode"));
         keeper = new Thread(() -> {
             boolean first = true;
             while (true) {
+                if (useBacklight) {
+                    // Android rewrites the brightness on wake-up (before the display
+                    // state reports ON) and during its dim animation: overwrite it
+                    // whatever the state, before the panel visibly lights up. When
+                    // the display is really off the value is already 0: no write.
+                    long sinceWake = SystemClock.uptimeMillis() - wakeTracker.lastWakeAt();
+                    SystemClock.sleep(pollIntervalMs(sinceWake));
+                    backlightOff(first);
+                    first = false;
+                    continue;
+                }
                 SystemClock.sleep(1000);
                 ScreenState screenState = device.getScreenState();
                 // Detect delayed sleep too, not only the first panel-off attempt.
@@ -63,12 +90,13 @@ public final class ScreenOffController {
                     disablePanelMode();
                     continue;
                 }
-                // Leave time for a wake-up to finish before darkening the screen.
-                if (SystemClock.uptimeMillis() - wakeTracker.lastWakeAt() < 1500 || screenState != ScreenState.ON) {
+                if (screenState != ScreenState.ON) {
                     continue;
                 }
-                if (useBacklight) {
-                    backlightOff(first);
+                if (SystemClock.uptimeMillis() - wakeTracker.lastWakeAt() < 1500) {
+                    // Panel power mode: leave time for a wake-up to finish first,
+                    // switching the panel off mid wake-up makes some ROMs sleep.
+                    continue;
                 } else if (!panelModeUnsupported) {
                     panelOff(device, first);
                 }
@@ -79,8 +107,69 @@ public final class ScreenOffController {
         keeper.start();
     }
 
-    /** Restore the screen; safe to call several times. */
-    public static synchronized void restore() {
+    static long pollIntervalMs(long sinceWakeMs) {
+        return sinceWakeMs >= 0 && sinceWakeMs < FAST_POLL_WINDOW_MS ? FAST_POLL_MS : SLOW_POLL_MS;
+    }
+
+    /**
+     * Called when the server exits. The user asked for a dark screen, so a
+     * disconnect must not light it up: lock the target instead. Safe to call
+     * several times.
+     */
+    public static void restore() {
+        Device target;
+        synchronized (ScreenOffController.class) {
+            target = device;
+            if (target == null || (savedBacklight.isEmpty() && !panelModeUsed)) {
+                restorePanel();
+                return;
+            }
+        }
+        // Not under the lock: the keeper must keep the panel dark while the
+        // device goes to sleep.
+        ScreenState state = target.getScreenState();
+        boolean asleep = state == ScreenState.OFF || (state == ScreenState.ON && goToSleep(target));
+        synchronized (ScreenOffController.class) {
+            if (asleep) {
+                // Android turns the display off itself and re-applies the
+                // brightness and panel mode on the next wake-up. Writing them
+                // back now would light the panel.
+                if (!savedBacklight.isEmpty() || panelModeUsed) {
+                    Ln.i("Disconnected: target screen left off (was " + state + ")");
+                }
+                savedBacklight.clear();
+                panelModeUsed = false;
+            } else {
+                restorePanel();
+            }
+        }
+    }
+
+    private static boolean goToSleep(Device device) {
+        long now = SystemClock.uptimeMillis();
+        boolean injected = injectKey(device, KeyEvent.ACTION_DOWN, now)
+                && injectKey(device, KeyEvent.ACTION_UP, now);
+        if (!injected) {
+            return false;
+        }
+        long deadline = SystemClock.uptimeMillis() + SLEEP_TIMEOUT_MS;
+        while (SystemClock.uptimeMillis() < deadline) {
+            SystemClock.sleep(50);
+            if (device.getScreenState() == ScreenState.OFF) {
+                return true;
+            }
+        }
+        Ln.w("Target did not go to sleep: turning its screen back on");
+        return false;
+    }
+
+    private static boolean injectKey(Device device, int action, long time) {
+        KeyEvent event = new KeyEvent(time, time, action, KeyEvent.KEYCODE_SLEEP, 0, 0,
+                KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD);
+        return device.injectInputEvent(event, InputManager.INJECT_INPUT_EVENT_MODE_WAIT_FOR_FINISH);
+    }
+
+    private static synchronized void restorePanel() {
         for (Map.Entry<File, String> entry : savedBacklight.entrySet()) {
             write(entry.getKey(), entry.getValue());
             Ln.i("Backlight restored: " + entry.getKey() + " = " + entry.getValue());
@@ -117,7 +206,7 @@ public final class ScreenOffController {
     }
 
     private static synchronized void backlightOff(boolean log) {
-        for (File node : findBacklightNodes()) {
+        for (File node : backlightNodes) {
             String current = read(node);
             if (current == null) {
                 continue;

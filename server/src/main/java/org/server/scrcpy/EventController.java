@@ -18,6 +18,7 @@ import org.server.scrcpy.model.CommandPacket;
 import org.server.scrcpy.model.ControlPacket;
 import org.server.scrcpy.model.MediaPacket;
 import org.server.scrcpy.wrappers.InputManager;
+import org.server.scrcpy.wrappers.ServiceManager;
 import org.server.scrcpy.control.PointersState;
 import org.server.scrcpy.control.Pointer;
 import org.server.scrcpy.control.PowerGesture;
@@ -44,7 +45,7 @@ public class EventController {
     private final PowerGesture powerGesture;
     private final TouchWakeGate touchWakeGate = new TouchWakeGate();
     private boolean proximity = false;
-    /** Last time we sent KEYCODE_WAKEUP (uptime ms). */
+    /** Last time we woke the device (uptime ms). */
     private volatile long lastWakeAt = 0;
 
     public EventController(Device device, DroidConnection connection, ScreenEncoder screenEncoder) {
@@ -328,9 +329,16 @@ public class EventController {
         // Serialize with panel-off application so it cannot race with this wake-up.
         synchronized (ScreenOffController.class) {
             if (!ScreenOffController.isPanelOff() && !device.isScreenOn() && now - lastWakeAt > 1500) {
-                Ln.i("Device asleep: waking it up");
                 lastWakeAt = now;
-                injectKeycode(KeyEvent.KEYCODE_WAKEUP);
+                // Not KEYCODE_WAKEUP: MIUI/HyperOS cancels that key when the proximity
+                // sensor reads near, so each touch made the screen blink on and off.
+                if (ServiceManager.getPowerManager().wakeUp()) {
+                    Ln.i("Device asleep: waking it up (power service)");
+                } else {
+                    // The display is confirmed off here, so the power key cannot toggle it off.
+                    Ln.i("Device asleep: waking it up (power key)");
+                    injectKeycode(KeyEvent.KEYCODE_POWER);
+                }
             }
         }
         if (isScreenOffMode()) {
