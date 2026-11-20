@@ -90,4 +90,80 @@ public class PowerManagerTest {
         assertNull(manager.isInteractive());
         assertEquals(1, warnings.size());
     }
+
+    // IPowerManager on API 28+.
+    private static final class WakeablePowerService implements IInterface {
+        final List<Object[]> wakeCalls = new ArrayList<>();
+        boolean deny;
+
+        public boolean isInteractive() {
+            return false;
+        }
+
+        public void wakeUp(long time, int reason, String details, String opPackageName) {
+            if (deny) {
+                throw new SecurityException("Neither user nor current process has DEVICE_POWER");
+            }
+            wakeCalls.add(new Object[]{time, reason, details, opPackageName});
+        }
+
+        @Override
+        public IBinder asBinder() {
+            return null;
+        }
+    }
+
+    // IPowerManager on API 21-27.
+    private static final class LegacyWakeablePowerService implements IInterface {
+        final List<Object[]> wakeCalls = new ArrayList<>();
+
+        public void wakeUp(long time, String reason, String opPackageName) {
+            wakeCalls.add(new Object[]{time, reason, opPackageName});
+        }
+
+        @Override
+        public IBinder asBinder() {
+            return null;
+        }
+    }
+
+    @Test
+    public void wakesThroughPowerServiceInsteadOfKeyPolicy() {
+        WakeablePowerService service = new WakeablePowerService();
+        PowerManager manager = new PowerManager(service, message -> fail(message));
+        assertTrue(manager.wakeUp(1234L));
+        assertEquals(1, service.wakeCalls.size());
+        Object[] call = service.wakeCalls.get(0);
+        assertEquals(1234L, call[0]);
+        assertEquals(PowerManager.WAKE_REASON_APPLICATION, call[1]);
+        assertEquals(PowerManager.WAKE_DETAILS, call[2]);
+        assertEquals(PowerManager.OP_PACKAGE, call[3]);
+    }
+
+    @Test
+    public void wakesThroughLegacyPowerService() {
+        LegacyWakeablePowerService service = new LegacyWakeablePowerService();
+        PowerManager manager = new PowerManager(service, message -> { });
+        assertTrue(manager.wakeUp(99L));
+        assertEquals(1, service.wakeCalls.size());
+        assertEquals(99L, service.wakeCalls.get(0)[0]);
+    }
+
+    @Test
+    public void deniedWakeReportsFailureSoCallerCanUsePowerKey() {
+        WakeablePowerService service = new WakeablePowerService();
+        service.deny = true;
+        List<String> warnings = new ArrayList<>();
+        PowerManager manager = new PowerManager(service, warnings::add);
+        assertFalse(manager.wakeUp(1L));
+        assertFalse(manager.wakeUp(2L));
+        assertEquals(1, warnings.size());
+        assertTrue(warnings.get(0).contains("DEVICE_POWER"));
+    }
+
+    @Test
+    public void missingWakeMethodReportsFailure() {
+        PowerManager manager = new PowerManager(new PrivatePowerService(), message -> { });
+        assertFalse(manager.wakeUp(1L));
+    }
 }
