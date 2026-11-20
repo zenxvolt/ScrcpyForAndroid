@@ -132,7 +132,7 @@
     <string name="label_stream_priority">Prioritas</string>
     <string name="helper_stream_priority">Lancar menjaga FPS tetap stabil (gambar bisa buram saat adegan ramai). Tajam menjaga gambar tetap jernih (FPS bisa turun). Di Wi-Fi lokal yang cepat, naikkan juga bitrate-nya.</string>
     <string name="switch_screen_off">Matikan layar HP target saat mirroring</string>
-    <string name="helper_screen_off">Layar HP target tetap gelap tetapi sistemnya tetap berjalan, jadi tetap bisa dilihat dan dikendalikan dari sini. Hemat daya untuk HP yang dijadikan server. Layar menyala lagi saat koneksi diputus. Ketuk layar mirror sekali untuk membangunkan HP target jika tertidur.</string>
+    <string name="helper_screen_off">Layar HP target tetap gelap tetapi sistemnya tetap berjalan, jadi tetap bisa dilihat dan dikendalikan dari sini. Hemat daya untuk HP yang dijadikan server. Saat koneksi diputus, HP target dikunci dan layarnya tetap mati. Ketuk layar mirror sekali untuk membangunkan HP target jika tertidur.</string>
     <string name="switch_root_mode">Mode root (tampilkan PIN layar kunci &amp; aplikasi aman)</string>
     <string name="helper_root_mode">Perangkat target harus di-root dan izin root (su) diberikan ke “Shell”. Juga memungkinkan kontrol tanpa “USB debugging (Pengaturan keamanan)” di Xiaomi.</string>
 
